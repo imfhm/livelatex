@@ -1,4 +1,4 @@
-# LiveLaTeX
+# LiveLaTeX (VibeCoded)
 
 LiveLaTeX is a Visual Studio Code extension for previewing LaTeX as you type. It renders in a webview, reads unsaved editor contents, and updates the existing preview after a short debounce instead of running a full TeX compilation for every edit.
 
