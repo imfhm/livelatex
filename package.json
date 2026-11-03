@@ -1,0 +1,68 @@
+{
+  "name": "livelatex",
+  "displayName": "LiveLaTeX",
+  "description": "Fast, unsaved LaTeX previews in Visual Studio Code.",
+  "version": "0.1.0",
+  "publisher": "livelatex",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:latex",
+    "onCommand:livelatex.openPreview",
+    "onCommand:livelatex.compileWithTectonic"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "livelatex.openPreview",
+        "title": "LiveLaTeX: Open Preview"
+      },
+      {
+        "command": "livelatex.compileWithTectonic",
+        "title": "LiveLaTeX: Compile PDF with Tectonic"
+      }
+    ],
+    "configuration": {
+      "title": "LiveLaTeX",
+      "properties": {
+        "livelatex.preview.debounceMs": {
+          "type": "number",
+          "default": 150,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Delay in milliseconds before updating the live preview."
+        },
+        "livelatex.tectonic.path": {
+          "type": "string",
+          "default": "tectonic",
+          "description": "Path to the Tectonic executable."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "vscode:prepublish": "npm run build"
+  },
+  "dependencies": {
+    "katex": "^0.19.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.5",
+    "typescript": "^5.8.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/imfhm/livelatex.git"
+  }
+}
