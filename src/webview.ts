@@ -1,4 +1,5 @@
-import { parseLatex, type PreviewBlock } from "./latexParser";
+import { parseLatex } from "./latexParser";
+import type { PreviewBlock } from "./latexTypes";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: { type: string; line?: number; character?: number; graphics?: Record<string, string> }): void;

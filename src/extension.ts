@@ -192,7 +192,7 @@ function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webvie
   <style>
     body { background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.65; padding: 1rem; margin: 0; }
     #page-stage { width: 210mm; margin: 0 auto; }
-    #content { box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0; padding: 25mm; color: #000; background: #fff; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35); transform-origin: top left; }
+    #content { box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0; padding: 25mm; color: #000; background: repeating-linear-gradient(to bottom, #fff 0, #fff 297mm, #d6d6d6 297mm, #d6d6d6 303mm); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35); transform-origin: top left; }
     h1, h2, h3 { line-height: 1.25; margin: 1.4em 0 0.55em; }
     p { margin: 0.65em 0; }
     ul, ol { padding-left: 2rem; }
@@ -214,13 +214,8 @@ function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webvie
     .footnote-backlink { margin-left: 0.5em; text-decoration: none; }
     .latex-graphic { display: block; max-width: 100%; height: auto; margin: 1em auto; }
     .latex-figure { margin: 1.5em 0; text-align: center; }
-    .latex-figure .tikz-picture { margin-left: auto; margin-right: auto; }
     .latex-figure figcaption { margin-top: 0.6em; text-align: center; }
     .graphic-error { color: var(--vscode-errorForeground); }
-    .tikz-picture { position: relative; margin: 1em 0; }
-    .tikz-picture svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-    .tikz-label { position: absolute; z-index: 1; white-space: nowrap; padding: 0.08em 0.2em; }
-    .tikz-unsupported { color: var(--vscode-descriptionForeground); font-size: 0.9em; margin: 1em 0; }
     @media (max-width: 600px) {
       body { padding: 0; }
       #content { padding: 16mm 12mm; }

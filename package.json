@@ -49,6 +49,7 @@
   "scripts": {
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
+    "test": "node --test",
     "typecheck": "tsc --noEmit",
     "vscode:prepublish": "npm run build"
   },
