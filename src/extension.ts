@@ -190,16 +190,33 @@ function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webvie
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <link rel="stylesheet" href="${styleUri}">
   <style>
-    body { background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.65; padding: 1rem; margin: 0; }
+    body { background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); padding: 1rem; margin: 0; }
     #page-stage { width: 210mm; margin: 0 auto; }
-    #content { box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0; padding: 25mm; color: #000; background: repeating-linear-gradient(to bottom, #fff 0, #fff 297mm, #d6d6d6 297mm, #d6d6d6 303mm); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35); transform-origin: top left; }
-    h1, h2, h3 { line-height: 1.25; margin: 1.4em 0 0.55em; }
-    p { margin: 0.65em 0; }
-    ul, ol { padding-left: 2rem; }
-    .katex-display { overflow: visible; padding: 0.2em 0; }
+    #content { --page-margin-left: 20mm; --page-margin-right: 20mm; --page-margin-top: 20mm; --page-margin-bottom: 20mm; --page-font-size: 10pt; display: flex; flex-direction: column; gap: 6mm; box-sizing: border-box; width: 210mm; margin: 0; color: #000; font-family: "KaTeX_Main", "Latin Modern Roman", "CMU Serif", "Times New Roman", serif; font-size: var(--page-font-size); line-height: 1.2; transform-origin: top left; }
+    .paper-page { position: relative; box-sizing: border-box; flex: 0 0 297mm; width: 210mm; height: 297mm; overflow: hidden; color: #000; background: #fff; border: 1px solid #d5d5d5; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35); }
+    .page-content { position: absolute; display: flow-root; box-sizing: border-box; left: var(--page-margin-left); right: var(--page-margin-right); top: var(--page-margin-top); height: calc(297mm - var(--page-margin-top) - var(--page-margin-bottom) - 2px); }
+    .paper-header { position: absolute; top: 8mm; left: var(--page-margin-left); right: var(--page-margin-right); display: flex; justify-content: space-between; gap: 1em; font-size: 9pt; font-style: italic; line-height: 1; text-transform: uppercase; white-space: nowrap; }
+    .paper-header-title { flex: 1; overflow: hidden; text-align: center; text-overflow: clip; }
+    .paper-footer { position: absolute; bottom: 8mm; left: 0; right: 0; text-align: center; font-size: 10pt; line-height: 1; }
+    h1, h2, h3 { font-weight: bold; line-height: 1.2; }
+    h1 { font-size: 12pt; margin: 18pt 0 6pt; }
+    h2 { font-size: 12pt; font-style: italic; margin: 16pt 0 6pt; }
+    h3 { font-size: 10pt; font-style: italic; margin: 14pt 0 6pt; }
+    p { margin: 0; text-indent: 15pt; }
+    ul, ol { margin: 0; padding-left: 2.5em; }
+    .katex-display { overflow: visible; padding: 0; margin: 0.8em 0; }
+    .chapter-heading { display: flow-root; margin: 20mm 0 15mm; }
+    .chapter-number { margin-bottom: 8mm; font-size: 18pt; line-height: 1.2; }
+    .chapter-heading h1 { font-size: 25pt; line-height: 1.2; margin: 0; }
+    .block:has(.chapter-heading) + .block p, .block:has(h1) + .block p, .block:has(h2) + .block p, .block:has(h3) + .block p, p.no-indent { text-indent: 0; }
     .katex .eqn-num::before, .katex .mml-eqn-num::before { content: none; counter-increment: none; }
     .math-error { white-space: pre-wrap; color: var(--vscode-errorForeground); }
     .theorem-body { font-style: italic; margin: 1em 0; }
+    .theorem-body.theorem-definition, .theorem-body.theorem-remark { font-style: normal; }
+    .theorem-body.theorem-remark > strong { font-style: italic; }
+    .theorem-fragment > .theorem-body, .theorem-fragment > .proof-body { margin: 0; }
+    .theorem-fragment.first-fragment > .theorem-body, .theorem-fragment.first-fragment > .proof-body { margin-top: 1em; }
+    .theorem-fragment.last-fragment > .theorem-body, .theorem-fragment.last-fragment > .proof-body { margin-bottom: 1em; }
     .theorem-body > strong { font-style: normal; }
     .theorem-body > .theorem-intro { display: inline; }
     .proof-body { margin: 1em 0; }
@@ -207,7 +224,6 @@ function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webvie
     .document-title-block { text-align: center; margin: 2em 0 3em; }
     .document-title { font-size: 2em; margin: 0 0 0.75em; }
     .document-author, .document-date { margin: 0.35em 0; }
-    .reference { white-space: nowrap; }
     .footnote-ref { font-size: 0.75em; vertical-align: super; line-height: 0; }
     .footnotes { font-size: 0.85em; margin-top: 2em; }
     .footnotes li { padding-left: 0.2em; }
@@ -216,10 +232,6 @@ function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webvie
     .latex-figure { margin: 1.5em 0; text-align: center; }
     .latex-figure figcaption { margin-top: 0.6em; text-align: center; }
     .graphic-error { color: var(--vscode-errorForeground); }
-    @media (max-width: 600px) {
-      body { padding: 0; }
-      #content { padding: 16mm 12mm; }
-    }
   </style>
 </head>
 <body>

@@ -60,11 +60,19 @@ function extractMacros(source: string): { source: string; macros: Record<string,
 function extractTheorems(source: string): { source: string; theorems: Map<string, TheoremDefinition> } {
   const theorems = new Map<string, TheoremDefinition>();
   const definitionPattern = /\\newtheorem\*?\s*\{([A-Za-z]+)\}/g;
+  const stylePattern = /\\theoremstyle\s*\{(plain|definition|remark)\}/g;
+  let styleMatch = stylePattern.exec(source);
+  let style: TheoremDefinition["style"] = "plain";
   let output = "";
   let cursor = 0;
   let match: RegExpExecArray | null;
 
   while ((match = definitionPattern.exec(source)) !== null) {
+    while (styleMatch && styleMatch.index < match.index) {
+      style = styleMatch[1] as TheoremDefinition["style"];
+      styleMatch = stylePattern.exec(source);
+    }
+
     let titleStart = skipWhitespace(source, definitionPattern.lastIndex);
     if (source[titleStart] === "[") {
       const optionEnd = source.indexOf("]", titleStart + 1);
@@ -81,7 +89,7 @@ function extractTheorems(source: string): { source: string; theorems: Map<string
       continue;
     }
 
-    theorems.set(match[1], { title: source.slice(titleStart + 1, titleEnd), nextNumber: 1 });
+    theorems.set(match[1], { title: source.slice(titleStart + 1, titleEnd), nextNumber: 1, style });
     output += source.slice(cursor, match.index);
     output += source.slice(match.index, titleEnd + 1).replace(/[^\r\n]/g, " ");
     cursor = titleEnd + 1;
@@ -148,6 +156,7 @@ function parseBlocks(source: string, context: ParseContext, baseLine = 0, source
   const blocks: RawBlock[] = [];
   let paragraph: string[] = [];
   let paragraphStartLine = 0;
+  let suppressParagraphIndent = false;
   let index = 0;
 
   const flushParagraph = () => {
@@ -159,8 +168,9 @@ function parseBlocks(source: string, context: ParseContext, baseLine = 0, source
         type: "paragraph",
         source: content,
         sourceLine: sourceLineAt(paragraphStartLine),
-        html: `<p>${renderInline(content, context)}</p>`
+        html: `<p${suppressParagraphIndent ? ' class="no-indent"' : ""}>${renderInline(content, context)}</p>`
       });
+      suppressParagraphIndent = false;
     }
   };
 
@@ -210,7 +220,9 @@ function parseBlocks(source: string, context: ParseContext, baseLine = 0, source
         type: `heading${level}`,
         source: line,
         sourceLine: sourceLineAt(index),
-        html: `<h${level}>${escapeHtml(prefix)}${renderInline(content, context)}</h${level}>`
+        html: heading[1] === "chapter"
+          ? `<header class="chapter-heading"><div class="chapter-number">Chapter ${escapeHtml(number)}</div><h1>${renderInline(content, context)}</h1></header>`
+          : `<h${level}>${escapeHtml(prefix)}${renderInline(content, context)}</h${level}>`
       });
       index += 1;
       continue;
@@ -273,6 +285,7 @@ function parseBlocks(source: string, context: ParseContext, baseLine = 0, source
           ? renderMathEnvironment(mathStart[1], expression, context)
           : renderMath(expression, true, context)
       });
+      suppressParagraphIndent = true;
       index = closed ? closingLine + 1 : lines.length;
       continue;
     }
@@ -344,9 +357,7 @@ function parseBlocks(source: string, context: ParseContext, baseLine = 0, source
       } else {
         const theorem = context.theorems.get(environment)!;
         const theoremNumber = theorem.nextNumber++;
-        const displayNumber = context.chapterNumber > 0
-          ? `${context.chapterNumber}.${theoremNumber}`
-          : String(theoremNumber);
+        const displayNumber = String(theoremNumber);
         heading = `${escapeHtml(theorem.title)} ${displayNumber}${optionalTitle ? ` (${renderInline(optionalTitle, context)})` : ""}.`;
         bodyStyle = "theorem-body";
         headingMarkup = `<strong>${heading}</strong>`;
@@ -355,7 +366,7 @@ function parseBlocks(source: string, context: ParseContext, baseLine = 0, source
         type: environment === "proof" ? "proof" : "theorem",
         source: rawLines.join("\n"),
         sourceLine: sourceLineAt(index),
-        html: `<div class="${bodyStyle}">${headingMarkup} ${renderTheoremBody(body, context, sourceLineAt(index))}${environment === "proof" ? '<span class="qed" aria-label="end of proof"></span>' : ""}</div>`
+        html: `<div class="${bodyStyle}${environment === "proof" ? "" : ` theorem-${context.theorems.get(environment)!.style}`}">${headingMarkup} ${renderTheoremBody(body, context, sourceLineAt(index))}${environment === "proof" ? '<span class="qed" aria-label="end of proof"></span>' : ""}</div>`
       });
       index = closed ? closingLine + 1 : lines.length;
       continue;
@@ -454,7 +465,7 @@ export function parseLatex(source: string, graphics: Record<string, string> = {}
     macros: macroDocument.macros,
     theorems: new Map([...theoremDocument.theorems].map(([name, theorem]) => [
       name,
-      { title: theorem.title, nextNumber: 1 }
+      { title: theorem.title, nextNumber: 1, style: theorem.style }
     ])),
     graphics,
     footnotes: [],

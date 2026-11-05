@@ -2,16 +2,10 @@ import katex from "katex";
 import type { ParseContext } from "./latexTypes";
 import { escapeHtml, findUnescaped, isSafeCssColor, readGroup, skipWhitespace } from "./latexUtils";
 
-function resolveMathReferences(expression: string): string {
-  return expression.replace(/\\(autoref|eqref|ref)\s*\{[^{}]+\}/g, (_match, command: string) =>
-    `\\text{${command === "eqref" ? "(??)" : "??"}}`
-  );
-}
-
 export function renderMath(expression: string, displayMode: boolean, context: ParseContext): string {
   try {
     const cleanExpression = expression.replace(/\\(?:nonumber|notag)\b/g, "");
-    return katex.renderToString(resolveMathReferences(cleanExpression), {
+    return katex.renderToString(cleanExpression, {
       displayMode,
       output: "htmlAndMathml",
       throwOnError: false,
@@ -82,7 +76,7 @@ function graphicDimension(dimension: string): string | undefined {
 export function renderInline(source: string, context: ParseContext): string {
   let output = "";
   let cursor = 0;
-  const tokenPattern = /\\includegraphics\*?(?:\s*\[[^\]]*\])?\s*\{|\\(?:textbf|textit|emph|texttt|textcolor|ref|eqref|autoref|label|enquote|footnote)\s*\{|\\\(|\$(?!\$)/g;
+  const tokenPattern = /\\includegraphics\*?(?:\s*\[[^\]]*\])?\s*\{|\\(?:textbf|textit|emph|texttt|textcolor|label|enquote|footnote)\s*\{|\\\(|\$(?!\$)/g;
 
   while (cursor < source.length) {
     tokenPattern.lastIndex = cursor;
@@ -143,7 +137,7 @@ export function renderInline(source: string, context: ParseContext): string {
       break;
     }
 
-    const command = token.match(/\\(textbf|textit|emph|texttt|textcolor|ref|eqref|autoref|label|enquote|footnote)/)?.[1];
+    const command = token.match(/\\(textbf|textit|emph|texttt|textcolor|label|enquote|footnote)/)?.[1];
     if (command === "label") {
       cursor = firstArgument.end;
       continue;
@@ -167,13 +161,6 @@ export function renderInline(source: string, context: ParseContext): string {
       context.footnotes.push(footnote);
       footnote.html = renderInline(firstArgument.content, context);
       output += `<sup class="footnote-ref"><a href="#footnote-${number}" id="footnote-ref-${number}">${number}</a></sup>`;
-      cursor = firstArgument.end;
-      continue;
-    }
-
-    if (command === "ref" || command === "eqref" || command === "autoref") {
-      const rendered = command === "eqref" ? "(??)" : "??";
-      output += `<span class="reference">${escapeHtml(rendered)}</span>`;
       cursor = firstArgument.end;
       continue;
     }

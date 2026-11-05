@@ -16,6 +16,7 @@ export interface RawBlock {
 export interface TheoremDefinition {
   title: string;
   nextNumber: number;
+  style: "plain" | "definition" | "remark";
 }
 
 export interface DocumentMetadata {

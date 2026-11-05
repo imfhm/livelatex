@@ -1,0 +1,171 @@
+\documentclass{book}
+\usepackage{amsmath, amssymb, amsthm, bm}
+\usepackage{csquotes}
+\usepackage{geometry}
+\usepackage[backend=bibtex]{biblatex}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{float}
+
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{patterns}
+
+\geometry{
+ a4paper,
+ total={170mm,257mm},
+ left=20mm,
+ top=20mm,
+ }
+ 
+\theoremstyle{definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{definition}{Definition}
+\newtheorem{example}{Example}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+
+
+\addbibresource{../literature.bib}
+
+\begin{document}
+\title{Error analysis of numerical integration methods in the context of neural network augmented mechanical modelling}
+
+\chapter{Ordinary Differential Equations}
+Consider the ordinary differential equation
+\begin{equation}
+    y'(t) = f(t, y, u(t, y)),
+\end{equation}
+where $u$ is a smooth system input or characteristic map. Given an approximation $\tilde{u}$ of $u$, we are interested in finding estimates or bounds for the local and global error of a numerical integration scheme, e.g. 
+\begin{equation}
+    \lVert \tilde{y}(T) - y_{N} \rVert,\quad \lVert \tilde{y}(h) - y_{1}\rVert,
+\end{equation}
+where $T > 0, y_{n}$ denote the numerical solutions after $n$ steps and $\tilde{y}$ denotes the solution of the perturbed equation
+\begin{equation}\label{eq:perturbed_system}
+    y' = f(t, y, \tilde{u}(t, y)).
+\end{equation}
+Specifically, we only consider problems where $f$ is Lipschitz in both $y$ and $u$ and $\tilde{u}$ is Lipschitz continuous in $y$, making both equations uniquely solvable for a given initial value $y(0) = y_{0}$. Classical error analysis may be insufficient here, since $\tilde{u}$ does not have to satisfy the typical smoothness assumptions for the right-hand side regarding differentiability or boundedness of higher order derivatives.
+
+\section{One-Step methods}
+Since we specifically want to consider system inputs which dependent both on time and state, we require the following simple extension of Taylor's theorem. 
+
+\begin{lemma}\label{le:taylor_extension}
+    Let $f: X \to F, X\subset \mathbb{R}^{m}, F\subset \mathbb{R}^{n}$, be in the class $C^{q}(X, F)$, such that $\partial^{q}f(x)$ is Lipschitz continuous in $x$. Then if $h\in \mathbb{R}^{m}$ and $x + th \in X$ for all $t\in[0,1]$, we have
+    \begin{align*}
+        f(x + h) = \sum _{k=0}^{q} \frac{1}{k!}\partial^{k}f(x)[h]^{k} + R(x, h),\quad \lVert R(x, h) \rVert \leq C\lVert h \rVert^{q+1}.
+    \end{align*}
+\end{lemma}
+
+\begin{proof}
+    For $q\geq 1$, this follows directly from [AmannEscher, Analysis II, Remark 5.9]. \textcolor{red}{For $q = 0$  ...}
+\end{proof}
+%By [Evans, PDEs, Theorem 4], $f$ belongs to the Sobolev space $W^{q+1, \infty}$. 
+We will now derive the local error for a one-step method applied to the system in (\ref{eq:perturbed_system}).
+\begin{theorem}
+    If 
+    \begin{itemize}
+        \item $f$ is sufficiently smooth, Lipschitz continuous in $y$ and $u$ and bounded
+        \item $\tilde{u} \in C^{q}$, $\tilde{u}$ and $\partial^{q} \tilde{u}$ Lipschitz continuous in $(t, y)$, $\tilde{u}$ bounded,
+    \end{itemize}
+    then a one-step method of order $p$
+    \[
+        y_{n+1} = y_{n} + h_{n} \Phi (t_{n}, y_{n}, h_{n}, f, u),
+    \]
+    where $\Phi$ is Lipschitz continuous in $u$, yields the local error
+    \[
+        \tilde{y}(t_{n+1}) - (\tilde{y}(t_{n}) + h_{n} \Phi (t_{n}, \tilde{y}(t_{n}), h_{n}, f, \tilde{u}) ) = \mathcal{O} (h^{q+2}) + \mathcal{O} (h^{p+1}),\quad 0 < h_{n} \leq h
+    \]
+\end{theorem}
+\begin{proof}
+    Following [Arnold 2010], write the local error as
+    \begin{align*}
+        le_{n} = \tilde{y}(t_{n+1}) &- \hat{y}(t_{n+1}) + \hat{y}(t_{n+1}) \\
+        &-\hat{y}_{n+1} + \hat{y}_{n+1} \\
+        &-(\tilde{y}(t_{n}) + h_{n} \Phi (t_{n}, \tilde{y}(t_{n}), h_{n}, f, \tilde{u}) ),
+    \end{align*}
+    where $\hat{y} = \hat{y}(t)$ and 
+    \[
+        \hat{y}_{n+1} = \tilde{y}(t_{n}) + h_{n} \Phi (t_{n}, \tilde{y}(t_{n}), h_{n}, f, \hat{u}_{n})
+    \] 
+    are the exact and one-step numerical solution of the locally defined smooth shadow problem
+    \begin{equation}\label{eq:smooth_shadow_problem}
+        y'(t) = f(t, y(t), \hat{u}_n(t, y(t))),\quad y(t_{n}) = \tilde{y}(t_{n}) 
+    \end{equation}
+    for smooth system input $\hat{u}_n$ obtained from the truncated multivariate Taylor polynomial, i.e.
+    \begin{align}
+        \hat{u}_n(t, y) = \sum_{k=0}^{q} \frac{1}{k!} \partial^{k}\tilde{u}(t_{n}, \tilde{y}(t_{n})) \begin{bmatrix}
+            t - t_{n} \\
+            y - \tilde{y}(t_{n})
+        \end{bmatrix}^{k}.
+    \end{align}
+    Since $f$ is Lipschitz in $u$, we get
+    \[
+        \lVert f(t, \hat{y}(t), \tilde{u}(t, \hat{y}(t))) - f(t, \hat{y}(t), \hat{u}_n(t, \hat{y}(t))) \rVert \leq L_{f, u} \lVert \tilde{u}(t, \hat{y}(t)) - \hat{u}_n(t, \hat{y}(t)) \rVert. 
+    \]
+    Therefore, by means of classical error analysis [HNW] and Taylor's theorem (\ref{le:taylor_extension}),
+    \begin{align}\label{eq:one_step_local_error_partA}
+        \lVert \tilde{y}(t_{n+1}) - \hat{y}(t_{n+1}) \rVert 
+        &\leq C_{1}h \sup_{t\in[t_{n}, t_{n+1}]}\left\lVert \begin{pmatrix}
+            t-t_{n} \\
+            \hat{y}(t) - y(t_{n})
+        \end{pmatrix} \right\rVert^{q+1} \nonumber\\
+        &\leq C_{2}h^{q+2},
+    \end{align}
+    where the last line follows from the fact that $\hat{y}(t)$ is the solution of (\ref{eq:smooth_shadow_problem}) and $f$ is bounded (since $\hat{u}_{n}$ as the truncated Taylor polynomial of $\tilde{u}$ is bounded). Additionally, for a constant $C_{3}$ independent of $n$, 
+    \begin{equation}\label{eq:one_step_local_error_partB}
+        \lVert  \hat{y}(t_{n+1}) - \hat{y}_{n+1} \rVert \leq C_{3}h^{p+1}. 
+    \end{equation}
+    With a Lipschitz condition on $\Phi$ in $u$, we lastly obtain
+    \begin{align}\label{eq:one_step_local_error_partC}
+        \lVert \hat{y}_{n+1} - (\tilde{y}(t_{n}) + h_{n}\Phi(t_{n}, \tilde{y}(t_{n}), h_{n}, f, \tilde{u})) \rVert 
+        &\leq hL_{\Phi, u} \sup_{(t, y)\in S}\lVert \hat{u}_{n}(t, y) -\tilde{u}(t, y)\rVert \nonumber\\
+        &\leq hC_{4}\sup_{(t,y)\in S}\left\lVert \begin{pmatrix}
+            t-t_{n} \\
+            y - y(t_{n})
+        \end{pmatrix} \right\rVert^{q+1}\nonumber\\
+        &\leq C_{5}h^{q+2}
+    \end{align}
+    where $S$ contains the stage vectors of the numerical integrator applied to (\ref{eq:smooth_shadow_problem}). With (\ref{eq:one_step_local_error_partA}), (\ref{eq:one_step_local_error_partB}), (\ref{eq:one_step_local_error_partC}) and the triangle inequality, we finally get
+    \begin{equation}
+        \lVert le_{n} \rVert = \mathcal{O}(h^{q+2}) + \mathcal{O}(h^{p+1}).  
+    \end{equation}
+\end{proof}
+
+\begin{example}
+    For an $s$-stage Runge-Kutta method, we have
+    \begin{equation}
+        \Phi(t, y, h, f, u) = \sum_{i=1}^{s}b_{i}f(t + c_{i}h, Y_{i}, u(t + c_{i}h, Y_{i})),\quad Y_{i} = y + h \sum_{j=1}^{s}a_{ij}f(t + c_{j}h, Y_{j}, u(t + c_{j}h, Y_{j})).
+    \end{equation}
+    Therefore
+    \begin{align}
+        \Phi(t, y, h, f, \hat{u}) - \Phi(t, y, h, f, \tilde{u})
+        &= \sum_{i=1}^{s}b_{i}\left( f(\hat{Y}_{i}, \hat{u}(\hat{Y}_{i})) - f(\tilde{Y}_i, \tilde{u}(\tilde{Y}_{i}))\right)
+    \end{align}
+    omitting times $t + c_{i}h$ for better readability. Now
+    \begin{align}
+        f(\hat{Y}_{i}, \hat{u}(\hat{Y}_{i})) - f(\tilde{Y}_i, \tilde{u}(\tilde{Y}_{i})) 
+        = f(\hat{Y}_{i}, \hat{u}(\hat{Y}_{i})) &- f(\hat{Y}_{i}, \tilde{u}(\hat{Y}_{i}))+f(\hat{Y}_{i}, \tilde{u}(\hat{Y}_{i}))\nonumber\\
+        &- f(\hat{Y}_{i}, \tilde{u}(\tilde{Y}_{i}))+f(\hat{Y}_{i}, \tilde{u}(\tilde{Y}_{i}))\nonumber\\
+        &- f(\tilde{Y}_i, \tilde{u}(\tilde{Y}_{i})),
+    \end{align}
+    such that for $C := L_{f, u}L_{\tilde{u}, y} + L_{f, y}$
+    \[
+        \lVert f(\hat{Y}_{i}, \hat{u}(\hat{Y}_{i})) - f(\tilde{Y}_i, \tilde{u}(\tilde{Y}_{i})) \rVert \leq  L_{f, u}\lVert \hat{u}(\hat{Y}_{i}) - \tilde{u}(\hat{Y}_{i}) \rVert + C \lVert \hat{Y}_{i} - \tilde{Y}_{i} \rVert. 
+    \] 
+    Notice that
+    \[
+        \lVert  \hat{Y}_{i} - \tilde{Y}_{i} \rVert \leq h \sum _{j=1}^{s} |a_{ij}| \lVert f(\hat{Y}_{j}, \hat{u}(\hat{Y}_{j})) - f(\tilde{Y}_j, \tilde{u}(\tilde{Y}_{j})) \rVert 
+    \]
+    and by taking the maximum with respect to $i$, we get for $C_{a} := C \cdot \max_{i} \sum_{j=1}^{s}|a_{ij}|$
+    \[
+        \max_{i} \lVert f(\hat{Y}_{i}, \hat{u}(\hat{Y}_{i})) - f(\tilde{Y}_i, \tilde{u}(\tilde{Y}_{i})) \rVert \leq L_{f, u}\max_{i} \lVert \hat{u}(\hat{Y}_{i}) - \tilde{u}(\hat{Y}_{i}) \rVert + hC_{a} \max_{i} \lVert f(\hat{Y}_{i}, \hat{u}(\hat{Y}_{i})) - f(\tilde{Y}_i, \tilde{u}(\tilde{Y}_{i})) \rVert,
+    \]
+    showing that 
+    \begin{align*}
+        \lVert \Phi(t, y, h, f, \hat{u}) - \Phi(t, y, h, f, \tilde{u}) \rVert 
+        &\leq \left( \sum _{i=1}^{s}|b_{i}| \right)\max_{i} \lVert f(\hat{Y}_{i}, \hat{u}(\hat{Y}_{i})) - f(\tilde{Y}_i, \tilde{u}(\tilde{Y}_{i})) \rVert \\ 
+        &\leq \frac{L_{f, u}\max_{i}\lVert \hat{u}(\hat{Y}_{i}) - \tilde{u}(\hat{Y}_{i}) \rVert}{1-hC_{a}}.
+    \end{align*}
+    We obtain the requirement $h \leq 1 / C_{a}$.
+\end{example}
+\end{document}

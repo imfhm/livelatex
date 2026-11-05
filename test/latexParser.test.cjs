@@ -18,15 +18,15 @@ require.extensions[".ts"] = (module, filename) => {
 
 const { parseLatex } = require(path.join("..", "src", "latexParser.ts"));
 
-test("renders references as unresolved placeholders without affecting equation numbering", () => {
+test("does not resolve references or change equation numbering", () => {
   const blocks = parseLatex([
     String.raw`See \ref{eq:first}, \eqref{eq:first}, and $\ref{eq:first}$.`,
     String.raw`\begin{equation}\label{eq:first}a=b\end{equation}`
   ].join("\n\n"));
 
-  assert.ok(blocks[0].html.includes('<span class="reference">??</span>'));
-  assert.ok(blocks[0].html.includes('<span class="reference">(??)</span>'));
-  assert.ok(blocks[0].html.includes("<mtext>??</mtext>"));
+  assert.ok(blocks[0].html.includes("\\ref{eq:first}"));
+  assert.ok(blocks[0].html.includes("\\eqref{eq:first}"));
+  assert.doesNotMatch(blocks[0].html, /class="reference"|\?\?/);
   assert.match(blocks[1].html, /\\tag\{1\}/);
   assert.doesNotMatch(blocks[1].html, /\\tag\{2\}/);
 });
@@ -48,7 +48,40 @@ test("retains supported text features while parsing once", () => {
   assert.match(blocks[0].html, /&ldquo;quoted&rdquo;/);
   assert.match(blocks[0].html, /class="footnote-ref"/);
   assert.match(blocks.find((block) => block.type === "theorem").html, /Lemma 1/);
+  assert.match(blocks.find((block) => block.type === "theorem").html, /theorem-plain/);
   assert.match(blocks.at(-1).html, /A note\./);
+});
+
+test("renders book chapter headings and definition-style theorem bodies", () => {
+  const blocks = parseLatex([
+    String.raw`\documentclass{book}`,
+    String.raw`\theoremstyle{definition}`,
+    String.raw`\newtheorem{definition}{Definition}`,
+    String.raw`\begin{document}`,
+    String.raw`\chapter{A chapter}`,
+    String.raw`\begin{definition}`,
+    "An upright definition.",
+    String.raw`\end{definition}`,
+    String.raw`\end{document}`
+  ].join("\n"));
+
+  assert.match(blocks[0].html, /class="chapter-heading"/);
+  assert.match(blocks[0].html, /class="chapter-number">Chapter 1/);
+  assert.match(blocks[1].html, /theorem-definition/);
+});
+
+test("numbers theorem environments independently unless a shared counter is requested", () => {
+  const blocks = parseLatex([
+    String.raw`\documentclass{book}`,
+    String.raw`\newtheorem{lemma}{Lemma}`,
+    String.raw`\begin{document}`,
+    String.raw`\chapter{A chapter}`,
+    String.raw`\begin{lemma}A lemma.\end{lemma}`,
+    String.raw`\end{document}`
+  ].join("\n"));
+
+  assert.match(blocks.find((block) => block.type === "theorem").html, /Lemma 1\./);
+  assert.doesNotMatch(blocks.find((block) => block.type === "theorem").html, /Lemma 1\.1/);
 });
 
 test("does not render TikZ environments", () => {

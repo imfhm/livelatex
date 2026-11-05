@@ -1,4 +1,5 @@
 import { parseLatex } from "./latexParser";
+import { findClosingBrace } from "./latexUtils";
 import type { PreviewBlock } from "./latexTypes";
 
 declare function acquireVsCodeApi(): {
@@ -15,14 +16,206 @@ const previewRoot: HTMLElement = content;
 const pageStage: HTMLElement = stage;
 
 const rendered = new Map<string, { element: HTMLElement; html: string }>();
+let orderedElements: HTMLElement[] = [];
 let sourceLines: string[] = [];
 let graphics: Record<string, string> = {};
 let previewZoom = 1;
+let bookLayout = false;
 
 function updatePageScale(): void {
   previewRoot.style.transform = `scale(${previewZoom})`;
   pageStage.style.width = `${previewRoot.offsetWidth * previewZoom}px`;
   pageStage.style.height = `${previewRoot.offsetHeight * previewZoom}px`;
+}
+
+function dimensionInMillimeters(value: string): number | undefined {
+  const match = value.trim().match(/^(-?\d*\.?\d+)\s*(mm|cm|in|pt|bp)$/i);
+  if (!match) {
+    return undefined;
+  }
+  const amount = Number(match[1]);
+  const factor: Record<string, number> = { mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, bp: 25.4 / 72 };
+  return amount * factor[match[2].toLowerCase()];
+}
+
+function updateDocumentLayout(source: string): void {
+  const documentClass = source.match(/\\documentclass(?:\[([^\]]*)\])?\s*\{([^}]+)\}/);
+  bookLayout = /^(book|report)$/.test(documentClass?.[2] ?? "");
+  previewRoot.classList.toggle("book-layout", bookLayout);
+  const fontSize = documentClass?.[1]?.match(/(?:^|,)\s*(10|11|12)pt(?:\s*,|$)/)?.[1] ?? "10";
+  previewRoot.style.setProperty("--page-font-size", `${fontSize}pt`);
+
+  let left = 25;
+  let right = 25;
+  let top = 25;
+  let bottom = 25;
+  const geometryCommand = /\\geometry(?:\s*\[[^\]]*\])?\s*\{/.exec(source);
+  if (geometryCommand) {
+    const openingBrace = source.indexOf("{", geometryCommand.index);
+    const closingBrace = findClosingBrace(source, openingBrace + 1);
+    if (closingBrace !== -1) {
+      const options = source.slice(openingBrace + 1, closingBrace);
+      const option = (name: string) => options.match(new RegExp(`(?:^|,)\\s*${name}\\s*=\\s*([^,\\r\\n]+)`))?.[1]?.trim();
+      const margin = option("margin");
+      const leftOption = option("left") ?? margin;
+      const rightOption = option("right") ?? margin;
+      const topOption = option("top") ?? margin;
+      const bottomOption = option("bottom") ?? margin;
+      left = dimensionInMillimeters(leftOption ?? "") ?? left;
+      right = dimensionInMillimeters(rightOption ?? "") ?? right;
+      top = dimensionInMillimeters(topOption ?? "") ?? top;
+      bottom = dimensionInMillimeters(bottomOption ?? "") ?? bottom;
+
+      const total = options.match(/\btotal\s*=\s*\{\s*([^,}]+)\s*,\s*([^}]+)\s*\}/);
+      const width = dimensionInMillimeters(option("width") ?? total?.[1] ?? "");
+      const height = dimensionInMillimeters(option("height") ?? total?.[2] ?? "");
+      if (width !== undefined && option("right") === undefined && margin === undefined) {
+        right = 210 - left - width;
+      }
+      if (height !== undefined && option("bottom") === undefined && margin === undefined) {
+        bottom = 297 - top - height;
+      }
+    }
+  }
+
+  previewRoot.style.setProperty("--page-margin-left", `${left}mm`);
+  previewRoot.style.setProperty("--page-margin-right", `${right}mm`);
+  previewRoot.style.setProperty("--page-margin-top", `${top}mm`);
+  previewRoot.style.setProperty("--page-margin-bottom", `${bottom}mm`);
+}
+
+function getRunningTitle(block: HTMLElement): string | undefined {
+  const chapter = block.querySelector<HTMLElement>(".chapter-heading");
+  if (chapter) {
+    const number = chapter.querySelector(".chapter-number")?.textContent?.trim() ?? "";
+    const title = chapter.querySelector("h1")?.textContent?.trim() ?? "";
+    return `${number}. ${title}`.toLocaleUpperCase();
+  }
+
+  const heading = block.querySelector<HTMLElement>("h1, h2, h3");
+  if (!heading) {
+    return undefined;
+  }
+  const text = heading.textContent?.trim() ?? "";
+  const numbered = text.match(/^(\d+(?:\.\d+)*)\s+(.+)$/);
+  return numbered ? `${numbered[1]}. ${numbered[2]}`.toLocaleUpperCase() : text.toLocaleUpperCase();
+}
+
+function theoremPaginationUnits(block: HTMLElement): HTMLElement[] {
+  const body = block.firstElementChild as HTMLElement | null;
+  if (!body || !body.matches(".theorem-body, .proof-body")) {
+    return [block];
+  }
+
+  const groups: Node[][] = [[]];
+  let foundAnchor = false;
+  for (const node of Array.from(body.childNodes)) {
+    if (node instanceof HTMLElement && node.classList.contains("source-anchor") && foundAnchor) {
+      groups.push([]);
+    }
+    groups[groups.length - 1].push(node.cloneNode(true));
+    if (node instanceof HTMLElement && node.classList.contains("source-anchor")) {
+      foundAnchor = true;
+    }
+  }
+  if (groups.length < 2) {
+    return [block];
+  }
+
+  return groups.map((group) => {
+    const fragment = document.createElement("section");
+    fragment.className = `block theorem-fragment${groups[0] === group ? " first-fragment" : ""}${groups[groups.length - 1] === group ? " last-fragment" : ""}`;
+    fragment.dataset.sourceLine = block.dataset.sourceLine ?? "";
+    fragment.dataset.sourceType = block.dataset.sourceType ?? "";
+    fragment.title = block.title;
+    const fragmentBody = document.createElement("div");
+    fragmentBody.className = body.className;
+    fragment.append(fragmentBody);
+    fragmentBody.append(...group);
+    return fragment;
+  });
+}
+
+function paginateBlocks(blocks: HTMLElement[]): void {
+  previewRoot.replaceChildren();
+
+  let pageNumber = 0;
+  let chapterTitle = "";
+  let sectionTitle = "";
+  const createPage = (chapterOpening = false): HTMLElement => {
+    pageNumber += 1;
+    const page = document.createElement("section");
+    page.className = "paper-page";
+    const pageContent = document.createElement("div");
+    pageContent.className = "page-content";
+    if (bookLayout && !chapterOpening) {
+      const header = document.createElement("header");
+      header.className = "paper-header";
+      const number = document.createElement("span");
+      number.className = "paper-header-number";
+      number.textContent = String(pageNumber);
+      const title = document.createElement("span");
+      title.className = "paper-header-title";
+      title.textContent = pageNumber % 2 === 0
+        ? chapterTitle || sectionTitle
+        : sectionTitle || chapterTitle;
+      if (pageNumber % 2 === 0) {
+        header.append(number, title);
+      } else {
+        header.append(title, number);
+      }
+      page.append(header);
+    } else {
+      const footer = document.createElement("footer");
+      footer.className = "paper-footer";
+      footer.textContent = String(pageNumber);
+      page.append(footer);
+    }
+    page.append(pageContent);
+    previewRoot.append(page);
+    return pageContent;
+  };
+
+  let pageContent = createPage(true);
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    const chapter = Boolean(block.querySelector(".chapter-heading"));
+    const nextTitle = getRunningTitle(block);
+    if (chapter) {
+      chapterTitle = nextTitle ?? chapterTitle;
+      sectionTitle = "";
+      if (pageContent.childElementCount > 0) {
+        pageContent = createPage(true);
+      }
+    } else if (nextTitle) {
+      sectionTitle = nextTitle;
+    }
+
+    let groups = theoremPaginationUnits(block).map((unit) => [unit]);
+    if (/^heading[1-3]$/.test(block.dataset.sourceType ?? "") && blocks[index + 1] && !chapter) {
+      const next = blocks[++index];
+      const nextUnits = theoremPaginationUnits(next);
+      groups = [[block, nextUnits[0]], ...nextUnits.slice(1).map((unit) => [unit])];
+    } else if (chapter && blocks[index + 1]) {
+      const next = blocks[++index];
+      const nextUnits = theoremPaginationUnits(next);
+      groups = [[block, nextUnits[0]], ...nextUnits.slice(1).map((unit) => [unit])];
+    }
+
+    for (const group of groups) {
+      const previousBlockCount = pageContent.childElementCount;
+      pageContent.append(...group);
+      const exceedsPage = pageContent.scrollHeight > pageContent.clientHeight
+        && group[group.length - 1].getBoundingClientRect().bottom > pageContent.getBoundingClientRect().bottom + 1;
+      if (exceedsPage && previousBlockCount > 0) {
+        for (const unit of group) {
+          unit.remove();
+        }
+        pageContent = createPage();
+        pageContent.append(...group);
+      }
+    }
+  }
 }
 
 window.addEventListener("wheel", (event: WheelEvent) => {
@@ -90,9 +283,10 @@ function fitDisplayMath(): void {
 function updatePreview(source: string): void {
   sourceLines = source.split(/\r?\n/);
   const scrollY = window.scrollY;
+  updateDocumentLayout(source);
   const blocks: PreviewBlock[] = parseLatex(source, graphics);
   const nextKeys = new Set(blocks.map((block) => block.key));
-  const orderedElements: HTMLElement[] = [];
+  orderedElements = [];
 
   for (const block of blocks) {
     let entry = rendered.get(block.key);
@@ -114,25 +308,32 @@ function updatePreview(source: string): void {
 
   for (const [key, entry] of rendered) {
     if (!nextKeys.has(key)) {
-      entry.element.remove();
       rendered.delete(key);
     }
   }
 
-  for (let index = 0; index < orderedElements.length; index += 1) {
-    const element = orderedElements[index];
-    const current = previewRoot.children.item(index);
-    if (current !== element) {
-      previewRoot.insertBefore(element, current);
-    }
-  }
+  paginateBlocks(orderedElements);
   updatePageScale();
   fitDisplayMath();
-  void document.fonts.ready.then(fitDisplayMath);
+  void document.fonts.ready.then(() => {
+    paginateBlocks(orderedElements);
+    updatePageScale();
+    fitDisplayMath();
+  });
+  for (const image of Array.from(previewRoot.querySelectorAll("img"))) {
+    image.addEventListener("load", () => {
+      paginateBlocks(orderedElements);
+      updatePageScale();
+    }, { once: true });
+  }
   window.scrollTo(window.scrollX, scrollY);
 }
 
-window.addEventListener("resize", fitDisplayMath);
+window.addEventListener("resize", () => {
+  paginateBlocks(orderedElements);
+  updatePageScale();
+  fitDisplayMath();
+});
 
 previewRoot.addEventListener("click", (event: MouseEvent) => {
   if (!event.ctrlKey || event.button !== 0) {
