@@ -1,4 +1,5 @@
 import katex from "katex";
+import { normalizeGraphicPath } from "./graphicPathUtils";
 import type { ParseContext } from "./latexTypes";
 import { escapeHtml, findUnescaped, isSafeCssColor, readGroup, skipWhitespace } from "./latexUtils";
 
@@ -16,10 +17,6 @@ export function renderMath(expression: string, displayMode: boolean, context: Pa
   } catch {
     return `<code class="math-error">${escapeHtml(expression)}</code>`;
   }
-}
-
-function normalizeGraphicPath(filename: string): string {
-  return filename.replace(/\\/g, "/").replace(/^\.\//, "").trim().toLowerCase();
 }
 
 function graphicStyles(options: string): string {

@@ -1,11 +1,14 @@
-import * as fs from "node:fs/promises";
 import { spawn } from "node:child_process";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { resolveGraphicFiles } from "./graphicPaths";
 
 interface PreviewState {
   panel: vscode.WebviewPanel;
   document: vscode.TextDocument;
+  localResourceRoots: vscode.Uri[];
+  graphicWatchers: Map<string, vscode.FileSystemWatcher>;
+  graphicVersions: Map<string, number>;
   timer: ReturnType<typeof setTimeout> | undefined;
   updateSequence: number;
 }
@@ -45,19 +48,28 @@ function openPreview(context: vscode.ExtensionContext): void {
     return;
   }
 
+  const localResourceRoots = [
+    vscode.Uri.joinPath(context.extensionUri, "dist"),
+    ...(document.uri.scheme === "file" ? [vscode.Uri.file(path.dirname(document.uri.fsPath))] : [])
+  ];
   const panel = vscode.window.createWebviewPanel(
     "livelatex.preview",
     `LiveLaTeX: ${path.basename(document.fileName) || "Untitled"}`,
     vscode.ViewColumn.Beside,
     {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(context.extensionUri, "dist"),
-        ...(document.uri.scheme === "file" ? [vscode.Uri.file(path.dirname(document.uri.fsPath))] : [])
-      ]
+      localResourceRoots
     }
   );
-  const state: PreviewState = { panel, document, timer: undefined, updateSequence: 0 };
+  const state: PreviewState = {
+    panel,
+    document,
+    localResourceRoots,
+    graphicWatchers: new Map(),
+    graphicVersions: new Map(),
+    timer: undefined,
+    updateSequence: 0
+  };
   previews.set(key, state);
   panel.webview.html = getWebviewHtml(context, panel.webview);
   panel.webview.onDidReceiveMessage((message: { type: string; line?: number; character?: number }) => {
@@ -71,6 +83,7 @@ function openPreview(context: vscode.ExtensionContext): void {
     if (state.timer) {
       clearTimeout(state.timer);
     }
+    disposeGraphicWatchers(state);
     previews.delete(key);
   }, undefined, context.subscriptions);
 }
@@ -104,9 +117,19 @@ async function sendUpdate(state: PreviewState): Promise<void> {
   state.timer = undefined;
   const sequence = ++state.updateSequence;
   const text = state.document.getText();
-  let graphics: Record<string, string>;
+  let resolvedGraphics: {
+    graphics: Record<string, string>;
+    graphicFiles: Record<string, string>;
+    localResourceRoots: vscode.Uri[];
+  };
   try {
-    graphics = await resolveGraphics(text, state.document, state.panel.webview);
+    resolvedGraphics = await resolveGraphics(
+      text,
+      state.document,
+      state.panel.webview,
+      state.localResourceRoots,
+      state.graphicVersions
+    );
   } catch (error) {
     void vscode.window.showErrorMessage(`Could not load LaTeX graphics: ${String(error)}`);
     return;
@@ -114,68 +137,90 @@ async function sendUpdate(state: PreviewState): Promise<void> {
   if (sequence !== state.updateSequence || state.panel.visible === false) {
     return;
   }
+  updateGraphicWatchers(state, resolvedGraphics.graphicFiles);
+  state.panel.webview.options = {
+    ...state.panel.webview.options,
+    localResourceRoots: resolvedGraphics.localResourceRoots
+  };
   await state.panel.webview.postMessage({
     type: "update",
     text,
-    graphics
+    graphics: resolvedGraphics.graphics
   });
 }
 
 async function resolveGraphics(
   text: string,
   document: vscode.TextDocument,
-  webview: vscode.Webview
-): Promise<Record<string, string>> {
+  webview: vscode.Webview,
+  localResourceRoots: vscode.Uri[],
+  graphicVersions: Map<string, number>
+): Promise<{
+  graphics: Record<string, string>;
+  graphicFiles: Record<string, string>;
+  localResourceRoots: vscode.Uri[];
+}> {
   if (document.uri.scheme !== "file") {
-    return {};
+    return { graphics: {}, graphicFiles: {}, localResourceRoots };
   }
 
   const baseDirectory = path.dirname(document.uri.fsPath);
-  const searchDirectories = [""];
-  for (const graphicspath of text.matchAll(/\\graphicspath\s*\{((?:\s*\{[^{}]*\}\s*)+)\}/g)) {
-    for (const directory of graphicspath[1].matchAll(/\{([^{}]*)\}/g)) {
-      searchDirectories.push(directory[1].trim());
-    }
+  const graphicFiles = await resolveGraphicFiles(text, baseDirectory);
+  const resourceRoots = new Map(
+    localResourceRoots.map((uri) => [uri.toString(), uri])
+  );
+  for (const filename of Object.values(graphicFiles)) {
+    const directory = vscode.Uri.file(path.dirname(filename));
+    resourceRoots.set(directory.toString(), directory);
   }
-
-  const supportedExtensions = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".bmp"];
   const resources: Record<string, string> = {};
-  const includePattern = /\\includegraphics\*?(?:\s*\[[^\]]*\])?\s*\{([^{}]+)\}/g;
-  for (const include of text.matchAll(includePattern)) {
-    const filename = include[1].trim();
-    const requestedExtension = path.extname(filename);
-    for (const directory of searchDirectories) {
-      const basePath = path.resolve(baseDirectory, directory, filename);
-      const relativePath = path.relative(baseDirectory, basePath);
-      if (relativePath === ".." || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
-        continue;
-      }
-      const candidates = requestedExtension
-        ? supportedExtensions.includes(requestedExtension.toLowerCase()) ? [basePath] : []
-        : supportedExtensions.map((extension) => `${basePath}${extension}`);
-      let found: string | undefined;
-      for (const candidate of candidates) {
-        try {
-          await fs.access(candidate);
-          found = candidate;
-          break;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT" && (error as NodeJS.ErrnoException).code !== "ENOTDIR") {
-            throw error;
-          }
-        }
-      }
-      if (found) {
-        resources[normalizeGraphicPath(filename)] = webview.asWebviewUri(vscode.Uri.file(found)).toString();
-        break;
-      }
-    }
+  for (const [filename, filePath] of Object.entries(graphicFiles)) {
+    const fileUri = vscode.Uri.file(filePath);
+    const webviewUri = webview.asWebviewUri(fileUri);
+    const version = graphicVersions.get(fileUri.toString());
+    resources[filename] = (version === undefined ? webviewUri : webviewUri.with({ query: `v=${version}` })).toString();
   }
-  return resources;
+  return {
+    graphics: resources,
+    graphicFiles,
+    localResourceRoots: [...resourceRoots.values()]
+  };
 }
 
-function normalizeGraphicPath(filename: string): string {
-  return filename.replace(/\\/g, "/").replace(/^\.\//, "").trim().toLowerCase();
+function updateGraphicWatchers(state: PreviewState, graphicFiles: Record<string, string>): void {
+  const files = new Map(
+    Object.values(graphicFiles).map((filePath) => [vscode.Uri.file(filePath).toString(), filePath])
+  );
+  for (const [key, watcher] of state.graphicWatchers) {
+    if (!files.has(key)) {
+      watcher.dispose();
+      state.graphicWatchers.delete(key);
+      state.graphicVersions.delete(key);
+    }
+  }
+  for (const [key, filePath] of files) {
+    if (state.graphicWatchers.has(key)) {
+      continue;
+    }
+    const pattern = new vscode.RelativePattern(path.dirname(filePath), path.basename(filePath));
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    const onFileChange = () => {
+      state.graphicVersions.set(key, (state.graphicVersions.get(key) ?? 0) + 1);
+      scheduleUpdate(state);
+    };
+    watcher.onDidChange(onFileChange);
+    watcher.onDidCreate(onFileChange);
+    watcher.onDidDelete(onFileChange);
+    state.graphicWatchers.set(key, watcher);
+  }
+}
+
+function disposeGraphicWatchers(state: PreviewState): void {
+  for (const watcher of state.graphicWatchers.values()) {
+    watcher.dispose();
+  }
+  state.graphicWatchers.clear();
+  state.graphicVersions.clear();
 }
 
 function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webview): string {
@@ -319,6 +364,7 @@ export function deactivate(): void {
     if (preview.timer) {
       clearTimeout(preview.timer);
     }
+    disposeGraphicWatchers(preview);
   }
   previews.clear();
 }

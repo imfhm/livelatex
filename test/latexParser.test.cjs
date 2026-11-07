@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const ts = require("typescript");
@@ -17,6 +18,33 @@ require.extensions[".ts"] = (module, filename) => {
 };
 
 const { parseLatex } = require(path.join("..", "src", "latexParser.ts"));
+const { resolveGraphicFiles } = require(path.join("..", "src", "graphicPaths.ts"));
+
+test("resolves graphics from relative paths outside the document directory", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "livelatex-graphics-"));
+  const documentDirectory = path.join(root, "tex");
+  const graphicsDirectory = path.join(root, "images");
+  fs.mkdirSync(documentDirectory);
+  fs.mkdirSync(graphicsDirectory);
+  fs.writeFileSync(path.join(graphicsDirectory, "plot.png"), "");
+
+  try {
+    const graphics = await resolveGraphicFiles(
+      String.raw`\includegraphics{../images/plot}`,
+      documentDirectory
+    );
+
+    assert.equal(graphics["../images/plot"], path.join(graphicsDirectory, "plot.png"));
+
+    const graphicsPath = await resolveGraphicFiles(
+      String.raw`\graphicspath{{../images/}}\includegraphics{plot}`,
+      documentDirectory
+    );
+    assert.equal(graphicsPath.plot, path.join(graphicsDirectory, "plot.png"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("does not resolve references or change equation numbering", () => {
   const blocks = parseLatex([
