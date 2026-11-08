@@ -1,6 +1,7 @@
 import { renderFigureBody, renderInline, renderMath, renderMathEnvironment } from "./latexRenderers";
+import { normalizeGraphicPath } from "./graphicPathUtils";
 import type { DocumentMetadata, ParseContext, PreviewBlock, RawBlock, TheoremDefinition } from "./latexTypes";
-import { escapeHtml, findClosingBrace, findUnescaped, skipWhitespace, stripComment } from "./latexUtils";
+import { escapeHtml, findClosingBrace, findUnescaped, readGroup, skipWhitespace, stripComment } from "./latexUtils";
 
 function extractMacros(source: string): { source: string; macros: Record<string, string> } {
   const uncommented = source.split(/\r?\n/).map(stripComment).join("\n");
@@ -101,10 +102,10 @@ function extractTheorems(source: string): { source: string; theorems: Map<string
 }
 
 function extractDocumentMetadata(source: string): { source: string; metadata: DocumentMetadata } {
-  const metadata: DocumentMetadata = { title: "", author: "", date: "" };
+  const metadata: DocumentMetadata = { title: "", author: "", date: "", institute: "" };
   let output = "";
   let cursor = 0;
-  const commandPattern = /\\(title|author|date)\s*\{/g;
+  const commandPattern = /\\(title|author|date|institute)\s*\{/g;
   let match: RegExpExecArray | null;
   while ((match = commandPattern.exec(source)) !== null) {
     const openingBrace = source.indexOf("{", match.index + match[0].indexOf(match[1]) + match[1].length);
@@ -120,6 +121,238 @@ function extractDocumentMetadata(source: string): { source: string; metadata: Do
   }
   output += source.slice(cursor);
   return { source: output, metadata };
+}
+
+interface BeamerFrame {
+  content: string;
+  title: string;
+  sourceLine: number;
+  contentLine: number;
+  titlePage: boolean;
+}
+
+function stripCommentsPreservingLines(source: string): string {
+  return source.split(/\r?\n/).map((line) => {
+    const uncommented = stripComment(line);
+    return uncommented + " ".repeat(line.length - uncommented.length);
+  }).join("\n");
+}
+
+function extractBeamerFrames(source: string): BeamerFrame[] {
+  const frames: BeamerFrame[] = [];
+  const framePattern = /\\begin\{frame\}|\\frame\s*\{/g;
+  const documentStart = source.indexOf("\\begin{document}");
+  framePattern.lastIndex = documentStart === -1 ? 0 : documentStart + "\\begin{document}".length;
+  let match: RegExpExecArray | null;
+
+  while ((match = framePattern.exec(source)) !== null) {
+    const environment = match[0] === "\\begin{frame}";
+    let contentStart: number;
+    let title = "";
+    let contentEnd: number;
+
+    if (environment) {
+      contentStart = skipWhitespace(source, framePattern.lastIndex);
+      if (source[contentStart] === "[") {
+        const optionEnd = source.indexOf("]", contentStart + 1);
+        if (optionEnd !== -1) {
+          contentStart = skipWhitespace(source, optionEnd + 1);
+        }
+      }
+      if (source[contentStart] === "{") {
+        const titleGroup = readGroup(source, contentStart);
+        if (titleGroup) {
+          title = titleGroup.content;
+          contentStart = titleGroup.end;
+        }
+      }
+      contentStart = skipWhitespace(source, contentStart);
+      contentEnd = source.indexOf("\\end{frame}", contentStart);
+      if (contentEnd === -1) {
+        break;
+      }
+      framePattern.lastIndex = contentEnd + "\\end{frame}".length;
+    } else {
+      contentStart = match.index + match[0].lastIndexOf("{");
+      const frameGroup = readGroup(source, contentStart);
+      if (!frameGroup) {
+        continue;
+      }
+      contentStart += 1;
+      contentEnd = frameGroup.end - 1;
+      framePattern.lastIndex = frameGroup.end;
+    }
+
+    const content = source.slice(contentStart, contentEnd);
+    frames.push({
+      content,
+      title,
+      sourceLine: (source.slice(0, match.index).match(/\n/g) ?? []).length,
+      contentLine: (source.slice(0, contentStart).match(/\n/g) ?? []).length,
+      titlePage: /\\titlepage\b/.test(content)
+    });
+  }
+  return frames;
+}
+
+function resolveIncrementalOverlays(source: string): string {
+  let overlay = 0;
+  return source.replace(/<\s*\+([^>]*)>/g, (_match, suffix: string) => `<${++overlay}${suffix}>`);
+}
+
+function overlayIsVisible(specification: string, overlay: number): boolean {
+  return specification.split(",").some((range) => {
+    const value = range.trim();
+    const match = value.match(/^(\d+)?\s*(?:-\s*(\d*)?)?$/);
+    if (!match) {
+      return false;
+    }
+    const start = match[1] ? Number(match[1]) : 1;
+    const end = value.includes("-")
+      ? match[2] ? Number(match[2]) : Number.POSITIVE_INFINITY
+      : start;
+    return overlay >= start && overlay <= end;
+  });
+}
+
+function overlayCount(source: string): number {
+  let maximum = 1;
+  const overlayPattern = /\\(?:onslide|only|uncover|visible|invisible|item)\s*<([^>]+)>/g;
+  let match: RegExpExecArray | null;
+  while ((match = overlayPattern.exec(source)) !== null) {
+    for (const number of match[1].match(/\d+/g) ?? []) {
+      maximum = Math.max(maximum, Number(number));
+    }
+  }
+  return maximum;
+}
+
+function applyOverlayCommands(source: string, overlay: number): string {
+  const commandPattern = /\\(onslide|only|uncover|visible|invisible)\s*<([^>]+)>\s*\{/g;
+  let output = "";
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = commandPattern.exec(source)) !== null) {
+    const openingBrace = commandPattern.lastIndex - 1;
+    const group = readGroup(source, openingBrace);
+    if (!group) {
+      continue;
+    }
+    output += source.slice(cursor, match.index);
+    let visible = overlayIsVisible(match[2], overlay);
+    if (match[1] === "invisible") {
+      visible = !visible;
+    }
+    output += visible
+      ? applyOverlayCommands(group.content, overlay)
+      : group.content.replace(/[^\r\n]/g, " ");
+    cursor = group.end;
+    commandPattern.lastIndex = cursor;
+  }
+  output += source.slice(cursor);
+
+  return output
+    .replace(/\\(?:begin|end)\{minipage\}\s*(?:\{[^{}]*\})?/g, "")
+    .replace(/^\s*\\(?:nologo|noframenumber|pause)\b.*$/gm, (line) => line.replace(/[^\r\n]/g, " "))
+    .replace(/^\s*\\vspace\*?\s*\{[^{}]*\}\s*$/gm, (line) => line.replace(/[^\r\n]/g, " "))
+    .replace(/^\s*[{}]\s*$/gm, (line) => line.replace(/[^\r\n]/g, " "));
+}
+
+function renderBeamerTitlePage(context: ParseContext, source: string): string {
+  const date = context.metadata.date === "\\today" || !context.metadata.date
+    ? new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+    : renderInline(context.metadata.date, context);
+  const institute = context.metadata.institute
+    .split(/\\\\/)
+    .map((line) => renderInline(line.trim(), context))
+    .filter(Boolean)
+    .join("<br>");
+  const logoCommand = /\\logo\s*\{/.exec(source);
+  let logo = "";
+  if (logoCommand) {
+    const openingBrace = source.indexOf("{", logoCommand.index);
+    const group = readGroup(source, openingBrace);
+    if (group && /\\includegraphics/.test(group.content)) {
+      const image = group.content.match(/\\includegraphics\*?(?:\s*\[[^\]]*\])?\s*\{([^{}]+)\}/);
+      if (image && context.graphics[normalizeGraphicPath(image[1].trim())]) {
+        logo = renderInline(image[0], context);
+      }
+    }
+  }
+
+  return `<div class="beamer-title-page"><h1>${renderInline(context.metadata.title, context)}</h1><div class="beamer-title-author">${renderInline(context.metadata.author, context)}</div>${institute ? `<div class="beamer-title-institute">${institute}</div>` : ""}<div class="beamer-title-date">${date}</div>${logo ? `<div class="beamer-title-logo">${logo}</div>` : ""}</div>`;
+}
+
+function parseBeamer(source: string, originalSource: string, context: ParseContext): PreviewBlock[] {
+  const frames = extractBeamerFrames(stripCommentsPreservingLines(source)).map((frame) => {
+    if (frame.title) {
+      return frame;
+    }
+    const titleCommand = /\\frametitle(?:\[[^\]]*\])?\s*\{/.exec(frame.content);
+    if (!titleCommand) {
+      return frame;
+    }
+    const titleStart = frame.content.indexOf("{", titleCommand.index);
+    const titleGroup = readGroup(frame.content, titleStart);
+    if (!titleGroup) {
+      return frame;
+    }
+    const content = `${frame.content.slice(0, titleCommand.index)}${frame.content.slice(titleGroup.end)}`;
+    return { ...frame, content, title: titleGroup.content };
+  });
+  const occurrences = new Map<string, number>();
+  const blocks: PreviewBlock[] = [];
+  let frameNumber = 0;
+
+  for (const frame of frames) {
+    frameNumber += 1;
+    const content = resolveIncrementalOverlays(frame.content);
+    const overlays = overlayCount(content);
+    const frameState = {
+      chapterNumber: context.chapterNumber,
+      sectionNumber: context.sectionNumber,
+      subsectionNumber: context.subsectionNumber,
+      equationNumber: context.equationNumber,
+      figureNumber: context.figureNumber,
+      theoremNumbers: new Map([...context.theorems].map(([name, theorem]) => [name, theorem.nextNumber])),
+      footnoteCount: context.footnotes.length
+    };
+
+    for (let overlay = 1; overlay <= overlays; overlay += 1) {
+      context.chapterNumber = frameState.chapterNumber;
+      context.sectionNumber = frameState.sectionNumber;
+      context.subsectionNumber = frameState.subsectionNumber;
+      context.equationNumber = frameState.equationNumber;
+      context.figureNumber = frameState.figureNumber;
+      context.currentOverlay = overlay;
+      for (const [name, number] of frameState.theoremNumbers) {
+        const theorem = context.theorems.get(name);
+        if (theorem) {
+          theorem.nextNumber = number;
+        }
+      }
+      context.footnotes.length = frameState.footnoteCount;
+
+      const slideHtml = frame.titlePage
+        ? renderBeamerTitlePage(context, originalSource)
+        : `<article class="beamer-slide" data-frame-number="${frameNumber}">${frame.title ? `<header class="beamer-slide-title">${renderInline(frame.title, context)}</header>` : ""}<div class="beamer-slide-body">${parseBlocks(applyOverlayCommands(content, overlay), context, frame.contentLine).map((block) => block.html).join("")}</div></article>`;
+      const html = frame.titlePage
+        ? slideHtml.replace('class="beamer-title-page"', `class="beamer-slide beamer-title-page" data-frame-number="${frameNumber}"`)
+        : slideHtml;
+      const sourceText = `${frame.content}\0${overlay}`;
+      const baseKey = `beamer-slide\0${frameNumber}\0${sourceText}`;
+      const occurrence = occurrences.get(baseKey) ?? 0;
+      occurrences.set(baseKey, occurrence + 1);
+      blocks.push({
+        type: "beamer-slide",
+        source: sourceText,
+        sourceLine: frame.sourceLine,
+        html,
+        key: `${baseKey}\0${occurrence}`
+      });
+    }
+  }
+  return blocks;
 }
 
 function renderTheoremBody(body: string, context: ParseContext, sourceLine: number): string {
@@ -379,28 +612,31 @@ function parseBlocks(source: string, context: ParseContext, baseLine = 0, source
       const items: string[] = [];
       const rawLines = [line];
       let currentItem: string[] = [];
+      let currentItemVisible = true;
       let closingLine = index;
       const endPattern = new RegExp(`^\\\\end\\{${listType}\\}`);
       for (closingLine = index + 1; closingLine < lines.length; closingLine += 1) {
         const listLine = lines[closingLine].trim();
         rawLines.push(lines[closingLine]);
         if (endPattern.test(listLine)) {
-          if (currentItem.length) {
+          if (currentItem.length && currentItemVisible) {
             items.push(currentItem.join(" "));
           }
           break;
         }
-        if (listLine.startsWith("\\item")) {
-          if (currentItem.length) {
+        const itemStart = listLine.match(/^\\item(?:<([^>]*)>)?(?:\s*\[[^\]]*\])?\s*/);
+        if (itemStart) {
+          if (currentItem.length && currentItemVisible) {
             items.push(currentItem.join(" "));
           }
-          currentItem = [listLine.replace(/^\\item(?:\s*\[[^\]]*\])?\s*/, "")];
-        } else if (currentItem.length) {
+          currentItemVisible = !itemStart[1] || overlayIsVisible(itemStart[1], context.currentOverlay);
+          currentItem = [listLine.replace(/^\\(?:item|beamerhiddenitem)(?:<[^>]*>)?(?:\s*\[[^\]]*\])?\s*/, "")];
+        } else if (currentItem.length && currentItemVisible) {
           currentItem.push(listLine);
         }
       }
       if (closingLine >= lines.length) {
-        if (currentItem.length) {
+        if (currentItem.length && currentItemVisible) {
           items.push(currentItem.join(" "));
         }
         closingLine = lines.length - 1;
@@ -461,12 +697,28 @@ export function parseLatex(source: string, graphics: Record<string, string> = {}
   const macroDocument = extractMacros(source);
   const theoremDocument = extractTheorems(macroDocument.source);
   const document = extractDocumentMetadata(theoremDocument.source);
+  const beamerDocument = /\\documentclass(?:\[[^\]]*\])?\s*\{beamer\}/.test(source);
+  const theorems = new Map([...theoremDocument.theorems].map(([name, theorem]) => [
+    name,
+    { title: theorem.title, nextNumber: 1, style: theorem.style }
+  ]));
+  if (beamerDocument) {
+    for (const [name, title, style] of [
+      ["theorem", "Theorem", "plain"],
+      ["definition", "Definition", "definition"],
+      ["lemma", "Lemma", "plain"],
+      ["corollary", "Corollary", "plain"],
+      ["proposition", "Proposition", "plain"],
+      ["example", "Example", "definition"]
+    ] as const) {
+      if (!theorems.has(name)) {
+        theorems.set(name, { title, nextNumber: 1, style });
+      }
+    }
+  }
   const context: ParseContext = {
     macros: macroDocument.macros,
-    theorems: new Map([...theoremDocument.theorems].map(([name, theorem]) => [
-      name,
-      { title: theorem.title, nextNumber: 1, style: theorem.style }
-    ])),
+    theorems,
     graphics,
     footnotes: [],
     metadata: document.metadata,
@@ -476,8 +728,13 @@ export function parseLatex(source: string, graphics: Record<string, string> = {}
     equationNumber: 1,
     figureNumber: 0,
     currentSourceLine: 0,
-    quoteDepth: 0
+    currentOverlay: 1,
+    quoteDepth: 0,
+    beamerLayout: beamerDocument
   };
+  if (beamerDocument) {
+    return parseBeamer(document.source, source, context);
+  }
   const blocks = parseBlocks(document.source, context);
   if (context.footnotes.length > 0) {
     blocks.push({

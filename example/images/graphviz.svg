@@ -1,0 +1,251 @@
+<svg width="292pt" height="120pt" viewBox="0.00 0.00 292.00 120.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 116.4)">
+<polygon fill="white" stroke="none" points="-4,4 -4,-116.4 288,-116.4 288,4 -4,4"/>
+<g id="clust1" class="cluster">
+<title>cluster_box</title>
+<polygon fill="none" stroke="black" points="8,-8 8,-53.2 72,-53.2 72,-8 8,-8"/>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_box2</title>
+<polygon fill="none" stroke="black" points="80,-8 80,-78.8 122,-78.8 122,-8 80,-8"/>
+</g>
+<g id="clust6" class="cluster">
+<title>cluster_box3</title>
+<polygon fill="none" stroke="black" points="168,-8 168,-78.8 210,-78.8 210,-8 168,-8"/>
+</g>
+<g id="clust9" class="cluster">
+<title>cluster_box4</title>
+<polygon fill="none" stroke="black" points="256,-8 256,-104.4 276,-104.4 276,-8 256,-8"/>
+</g>
+<!-- a -->
+<g id="node1" class="node">
+<title>a</title>
+<ellipse fill="white" stroke="black" cx="40" cy="-17.8" rx="1.8" ry="1.8"/>
+</g>
+<!-- b -->
+<g id="node2" class="node">
+<title>b</title>
+<ellipse fill="black" stroke="black" cx="18" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a&#45;&#45;b -->
+<g id="edge1" class="edge">
+<title>a--b</title>
+<path fill="none" stroke="black" d="M39.05,-19.81C35.37,-23.77 22.01,-38.09 18.73,-41.61"/>
+</g>
+<!-- c -->
+<g id="node3" class="node">
+<title>c</title>
+<ellipse fill="black" stroke="black" cx="40" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a&#45;&#45;c -->
+<g id="edge2" class="edge">
+<title>a--c</title>
+<path fill="none" stroke="black" d="M40,-20.07C40,-24.2 40,-37.26 40,-41.24"/>
+</g>
+<!-- d -->
+<g id="node4" class="node">
+<title>d</title>
+<ellipse fill="black" stroke="black" cx="62" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a&#45;&#45;d -->
+<g id="edge3" class="edge">
+<title>a--d</title>
+<path fill="none" stroke="black" d="M40.95,-19.81C44.63,-23.77 57.99,-38.09 61.27,-41.61"/>
+</g>
+<!-- a1 -->
+<g id="node5" class="node">
+<title>a1</title>
+<ellipse fill="white" stroke="black" cx="101" cy="-17.8" rx="1.8" ry="1.8"/>
+</g>
+<!-- b1 -->
+<g id="node6" class="node">
+<title>b1</title>
+<ellipse fill="black" stroke="black" cx="90" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a1&#45;&#45;b1 -->
+<g id="edge4" class="edge">
+<title>a1--b1</title>
+<path fill="none" stroke="black" d="M100.53,-19.81C98.75,-23.63 92.48,-37.08 90.56,-41.2"/>
+</g>
+<!-- c1 -->
+<g id="node7" class="node">
+<title>c1</title>
+<ellipse fill="black" stroke="black" cx="112" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a1&#45;&#45;c1 -->
+<g id="edge5" class="edge">
+<title>a1--c1</title>
+<path fill="none" stroke="black" d="M101.47,-19.81C103.25,-23.63 109.52,-37.08 111.44,-41.2"/>
+</g>
+<!-- d1 -->
+<g id="node8" class="node">
+<title>d1</title>
+<ellipse fill="black" stroke="black" cx="112" cy="-69" rx="1.8" ry="1.8"/>
+</g>
+<!-- c1&#45;&#45;d1 -->
+<g id="edge6" class="edge">
+<title>c1--d1</title>
+<path fill="none" stroke="black" d="M112,-45.67C112,-49.8 112,-62.86 112,-66.84"/>
+</g>
+<!-- a2 -->
+<g id="node9" class="node">
+<title>a2</title>
+<ellipse fill="white" stroke="black" cx="145" cy="-17.8" rx="1.8" ry="1.8"/>
+</g>
+<!-- b2 -->
+<g id="node10" class="node">
+<title>b2</title>
+<ellipse fill="black" stroke="black" cx="134" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a2&#45;&#45;b2 -->
+<g id="edge7" class="edge">
+<title>a2--b2</title>
+<path fill="none" stroke="black" d="M144.53,-19.81C142.75,-23.63 136.48,-37.08 134.56,-41.2"/>
+</g>
+<!-- c2 -->
+<g id="node11" class="node">
+<title>c2</title>
+<ellipse fill="black" stroke="black" cx="156" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a2&#45;&#45;c2 -->
+<g id="edge8" class="edge">
+<title>a2--c2</title>
+<path fill="none" stroke="black" d="M145.47,-19.81C147.25,-23.63 153.52,-37.08 155.44,-41.2"/>
+</g>
+<!-- d2 -->
+<g id="node12" class="node">
+<title>d2</title>
+<ellipse fill="white" stroke="black" cx="156" cy="-69" rx="1.8" ry="1.8"/>
+</g>
+<!-- c2&#45;&#45;d2 -->
+<g id="edge9" class="edge">
+<title>c2--d2</title>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M156,-45.67C156,-49.8 156,-62.86 156,-66.84"/>
+</g>
+<!-- e2 -->
+<g id="node13" class="node">
+<title>e2</title>
+<ellipse fill="black" stroke="black" cx="156" cy="-94.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- d2&#45;&#45;e2 -->
+<g id="edge10" class="edge">
+<title>d2--e2</title>
+<path fill="none" stroke="black" d="M156,-71.27C156,-75.4 156,-88.46 156,-92.44"/>
+</g>
+<!-- a3 -->
+<g id="node14" class="node">
+<title>a3</title>
+<ellipse fill="white" stroke="black" cx="189" cy="-17.8" rx="1.8" ry="1.8"/>
+</g>
+<!-- b3 -->
+<g id="node15" class="node">
+<title>b3</title>
+<ellipse fill="black" stroke="black" cx="189" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a3&#45;&#45;b3 -->
+<g id="edge11" class="edge">
+<title>a3--b3</title>
+<path fill="none" stroke="black" d="M189,-20.07C189,-24.2 189,-37.26 189,-41.24"/>
+</g>
+<!-- c3 -->
+<g id="node16" class="node">
+<title>c3</title>
+<ellipse fill="black" stroke="black" cx="178" cy="-69" rx="1.8" ry="1.8"/>
+</g>
+<!-- b3&#45;&#45;c3 -->
+<g id="edge12" class="edge">
+<title>b3--c3</title>
+<path fill="none" stroke="black" d="M188.53,-45.41C186.75,-49.23 180.48,-62.68 178.56,-66.8"/>
+</g>
+<!-- d3 -->
+<g id="node17" class="node">
+<title>d3</title>
+<ellipse fill="black" stroke="black" cx="200" cy="-69" rx="1.8" ry="1.8"/>
+</g>
+<!-- b3&#45;&#45;d3 -->
+<g id="edge13" class="edge">
+<title>b3--d3</title>
+<path fill="none" stroke="black" d="M189.47,-45.41C191.25,-49.23 197.52,-62.68 199.44,-66.8"/>
+</g>
+<!-- a4 -->
+<g id="node18" class="node">
+<title>a4</title>
+<ellipse fill="white" stroke="black" cx="233" cy="-17.8" rx="1.8" ry="1.8"/>
+</g>
+<!-- b4 -->
+<g id="node19" class="node">
+<title>b4</title>
+<ellipse fill="black" stroke="black" cx="233" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a4&#45;&#45;b4 -->
+<g id="edge14" class="edge">
+<title>a4--b4</title>
+<path fill="none" stroke="black" d="M233,-20.07C233,-24.2 233,-37.26 233,-41.24"/>
+</g>
+<!-- c4 -->
+<g id="node20" class="node">
+<title>c4</title>
+<ellipse fill="white" stroke="black" cx="222" cy="-69" rx="1.8" ry="1.8"/>
+</g>
+<!-- b4&#45;&#45;c4 -->
+<g id="edge15" class="edge">
+<title>b4--c4</title>
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M232.53,-45.41C230.75,-49.23 224.48,-62.68 222.56,-66.8"/>
+</g>
+<!-- e4 -->
+<g id="node22" class="node">
+<title>e4</title>
+<ellipse fill="black" stroke="black" cx="244" cy="-69" rx="1.8" ry="1.8"/>
+</g>
+<!-- b4&#45;&#45;e4 -->
+<g id="edge17" class="edge">
+<title>b4--e4</title>
+<path fill="none" stroke="black" d="M233.47,-45.41C235.25,-49.23 241.52,-62.68 243.44,-66.8"/>
+</g>
+<!-- d4 -->
+<g id="node21" class="node">
+<title>d4</title>
+<ellipse fill="black" stroke="black" cx="222" cy="-94.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- c4&#45;&#45;d4 -->
+<g id="edge16" class="edge">
+<title>c4--d4</title>
+<path fill="none" stroke="black" d="M222,-71.27C222,-75.4 222,-88.46 222,-92.44"/>
+</g>
+<!-- a5 -->
+<g id="node23" class="node">
+<title>a5</title>
+<ellipse fill="white" stroke="black" cx="266" cy="-17.8" rx="1.8" ry="1.8"/>
+</g>
+<!-- b5 -->
+<g id="node24" class="node">
+<title>b5</title>
+<ellipse fill="black" stroke="black" cx="266" cy="-43.4" rx="1.8" ry="1.8"/>
+</g>
+<!-- a5&#45;&#45;b5 -->
+<g id="edge18" class="edge">
+<title>a5--b5</title>
+<path fill="none" stroke="black" d="M266,-20.07C266,-24.2 266,-37.26 266,-41.24"/>
+</g>
+<!-- c5 -->
+<g id="node25" class="node">
+<title>c5</title>
+<ellipse fill="black" stroke="black" cx="266" cy="-69" rx="1.8" ry="1.8"/>
+</g>
+<!-- b5&#45;&#45;c5 -->
+<g id="edge19" class="edge">
+<title>b5--c5</title>
+<path fill="none" stroke="black" d="M266,-45.67C266,-49.8 266,-62.86 266,-66.84"/>
+</g>
+<!-- d5 -->
+<g id="node26" class="node">
+<title>d5</title>
+<ellipse fill="black" stroke="black" cx="266" cy="-94.6" rx="1.8" ry="1.8"/>
+</g>
+<!-- c5&#45;&#45;d5 -->
+<g id="edge20" class="edge">
+<title>c5--d5</title>
+<path fill="none" stroke="black" d="M266,-71.27C266,-75.4 266,-88.46 266,-92.44"/>
+</g>
+</g>
+</svg>

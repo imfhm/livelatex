@@ -23,6 +23,7 @@ export interface DocumentMetadata {
   title: string;
   author: string;
   date: string;
+  institute: string;
 }
 
 export interface ParseContext {
@@ -37,5 +38,7 @@ export interface ParseContext {
   equationNumber: number;
   figureNumber: number;
   currentSourceLine: number;
+  currentOverlay: number;
   quoteDepth: number;
+  beamerLayout: boolean;
 }

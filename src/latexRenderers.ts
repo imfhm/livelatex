@@ -19,7 +19,7 @@ export function renderMath(expression: string, displayMode: boolean, context: Pa
   }
 }
 
-function graphicStyles(options: string): string {
+function graphicStyles(options: string, beamerLayout: boolean): string {
   const properties = new Map<string, string>();
   const optionPattern = /(?:^|,)\s*([A-Za-z]+)\s*=\s*([^,]+)/g;
   let match: RegExpExecArray | null;
@@ -31,13 +31,13 @@ function graphicStyles(options: string): string {
   const height = properties.get("height");
   const scale = Number(properties.get("scale") ?? "1");
   if (width) {
-    const widthStyle = graphicDimension(width);
+    const widthStyle = graphicDimension(width, "width", beamerLayout);
     if (widthStyle) {
       styles.push(`width:${widthStyle}`);
     }
   }
   if (height) {
-    const heightStyle = graphicDimension(height);
+    const heightStyle = graphicDimension(height, "height", beamerLayout);
     if (heightStyle) {
       styles.push(`height:${heightStyle}`);
     }
@@ -55,14 +55,13 @@ function graphicStyles(options: string): string {
   return styles.join(";");
 }
 
-function graphicDimension(dimension: string): string | undefined {
+function graphicDimension(dimension: string, axis: "width" | "height", beamerLayout: boolean): string | undefined {
   const normalized = dimension.trim().toLowerCase();
-  const textWidth = normalized.match(/^([\d.]+)\s*\\(?:textwidth|linewidth)$/);
-  if (textWidth) {
-    return `${Number(textWidth[1]) * 100}%`;
-  }
-  if (/^\d*\.?\d+\\(?:textwidth|linewidth)$/.test(normalized)) {
-    return `${Number.parseFloat(normalized) * 100}%`;
+  const unit = axis === "width" ? "(?:textwidth|linewidth)" : "(?:textheight|textwidth)";
+  const textDimension = normalized.match(new RegExp(`^([\\d.]+)?\\\\${unit}$`));
+  if (textDimension) {
+    const percentage = Number(textDimension[1] ?? "1") * 100;
+    return axis === "height" && beamerLayout ? `${percentage}cqh` : `${percentage}%`;
   }
   if (/^\d*\.?\d+(?:px|em|rem|ex|pt|pc|mm|cm|in|%)$/.test(normalized)) {
     return normalized;
@@ -73,7 +72,7 @@ function graphicDimension(dimension: string): string | undefined {
 export function renderInline(source: string, context: ParseContext): string {
   let output = "";
   let cursor = 0;
-  const tokenPattern = /\\includegraphics\*?(?:\s*\[[^\]]*\])?\s*\{|\\(?:textbf|textit|emph|texttt|textcolor|label|enquote|footnote)\s*\{|\\\(|\$(?!\$)/g;
+  const tokenPattern = /\\(?:includegraphics|includesvg)\*?(?:\s*\[[^\]]*\])?\s*\{|\\begin\{(equation\*?|align\*?|gather\*?)\}|\\\[|\\(?:textbf|textit|emph|texttt|textcolor|underline|label|enquote|footnote|blfootnote)\s*\{|\\\\|\$\$|\\\(|\$(?!\$)/g;
 
   while (cursor < source.length) {
     tokenPattern.lastIndex = cursor;
@@ -85,20 +84,40 @@ export function renderInline(source: string, context: ParseContext): string {
 
     output += escapeHtml(source.slice(cursor, match.index));
     const token = match[0];
-    if (token === "\\(" || token === "$") {
-      const delimiter = token === "\\(" ? "\\)" : "$";
+    if (token === "\\\\") {
+      output += "<br>";
+      cursor = match.index + token.length;
+      continue;
+    }
+    const mathEnvironment = token.match(/^\\begin\{(equation\*?|align\*?|gather\*?)\}$/)?.[1];
+    if (mathEnvironment) {
+      const bodyStart = match.index + token.length;
+      const endToken = `\\end{${mathEnvironment}}`;
+      const end = source.indexOf(endToken, bodyStart);
+      if (end === -1) {
+        output += escapeHtml(source.slice(match.index));
+        break;
+      }
+      output += renderMathEnvironment(mathEnvironment, source.slice(bodyStart, end), context);
+      cursor = end + endToken.length;
+      continue;
+    }
+    if (token === "\\[" || token === "$$" || token === "\\(" || token === "$") {
+      const delimiter = token === "\\(" ? "\\)"
+        : token === "\\[" ? "\\]"
+          : token;
       const bodyStart = match.index + token.length;
       const end = findUnescaped(source, delimiter, bodyStart);
       if (end === -1) {
         output += escapeHtml(source.slice(match.index));
         break;
       }
-      output += renderMath(source.slice(bodyStart, end), false, context);
+      output += renderMath(source.slice(bodyStart, end), token === "\\[" || token === "$$", context);
       cursor = end + delimiter.length;
       continue;
     }
 
-    if (token.startsWith("\\includegraphics")) {
+    if (token.startsWith("\\includegraphics") || token.startsWith("\\includesvg")) {
       const optionStart = token.indexOf("[");
       const options = optionStart === -1
         ? ""
@@ -113,13 +132,24 @@ export function renderInline(source: string, context: ParseContext): string {
       const filename = argument.content.trim();
       const uri = context.graphics[normalizeGraphicPath(filename)];
       if (!uri) {
-        output += `<span class="graphic-error">Image not found: ${escapeHtml(filename)}</span>`;
+        const styles = graphicStyles(options, context.beamerLayout);
+        output += `<span class="graphic-error"${styles ? ` style="${escapeHtml(styles)}"` : ""}>Image not found: ${escapeHtml(filename)}</span>`;
         cursor = argument.end;
         continue;
       }
 
-      const styles = graphicStyles(options);
-      output += `<img class="latex-graphic" src="${escapeHtml(uri)}" alt="${escapeHtml(filename)}"${styles ? ` style="${escapeHtml(styles)}"` : ""}>`;
+      const styles = graphicStyles(options, context.beamerLayout);
+      if (pathExtension(filename) === ".pdf" || pathExtension(uri.split("?")[0]) === ".pdf") {
+        const page = options.match(/(?:^|,)\s*page\s*=\s*(\d+)/i)?.[1] ?? "1";
+        output += `<canvas class="latex-pdf-graphic" data-pdf-src="${escapeHtml(uri)}" data-pdf-page="${page}" aria-label="${escapeHtml(filename)}"${styles ? ` style="${escapeHtml(styles)}"` : ""}></canvas>`;
+        cursor = argument.end;
+        continue;
+      }
+
+      const imageClass = pathExtension(filename) === ".svg" || pathExtension(uri.split("?")[0]) === ".svg"
+        ? "latex-graphic latex-svg-graphic"
+        : "latex-graphic";
+      output += `<img class="${imageClass}" src="${escapeHtml(uri)}" alt="${escapeHtml(filename)}"${styles ? ` style="${escapeHtml(styles)}"` : ""}>`;
       cursor = argument.end;
       continue;
     }
@@ -134,7 +164,7 @@ export function renderInline(source: string, context: ParseContext): string {
       break;
     }
 
-    const command = token.match(/\\(textbf|textit|emph|texttt|textcolor|label|enquote|footnote)/)?.[1];
+    const command = token.match(/\\(textbf|textit|emph|texttt|textcolor|underline|label|enquote|footnote|blfootnote)/)?.[1];
     if (command === "label") {
       cursor = firstArgument.end;
       continue;
@@ -162,6 +192,12 @@ export function renderInline(source: string, context: ParseContext): string {
       continue;
     }
 
+    if (command === "blfootnote") {
+      output += `<span class="beamer-footnote">${renderInline(firstArgument.content, context)}</span>`;
+      cursor = firstArgument.end;
+      continue;
+    }
+
     if (command === "textcolor") {
       const colorStart = skipWhitespace(source, firstArgument.end);
       const secondArgument = readGroup(source, colorStart);
@@ -184,12 +220,18 @@ export function renderInline(source: string, context: ParseContext): string {
       continue;
     }
     const inner = renderInline(firstArgument.content, context);
-    const tag = command === "textbf" ? "strong" : command === "texttt" ? "code" : "em";
+    const tag = command === "textbf" ? "strong" : command === "texttt" ? "code" : command === "underline" ? "u" : "em";
     output += `<${tag}>${inner}</${tag}>`;
     cursor = firstArgument.end;
   }
 
   return output;
+}
+
+function pathExtension(filename: string): string {
+  const separator = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
+  const dot = filename.lastIndexOf(".");
+  return dot > separator ? filename.slice(dot).toLowerCase() : "";
 }
 
 

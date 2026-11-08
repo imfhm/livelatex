@@ -1,7 +1,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { normalizeGraphicPath } from "./graphicPathUtils";
-const supportedExtensions = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".bmp"];
+const supportedExtensions = [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".bmp"];
+const svgExtensions = [".svg"];
 
 export async function resolveGraphicFiles(text: string, baseDirectory: string): Promise<Record<string, string>> {
   const searchDirectories = [""];
@@ -12,22 +13,24 @@ export async function resolveGraphicFiles(text: string, baseDirectory: string): 
   }
 
   const resources: Record<string, string> = {};
-  const includePattern = /\\includegraphics\*?(?:\s*\[[^\]]*\])?\s*\{([^{}]+)\}/g;
+  const includePattern = /\\(includegraphics|includesvg)\*?(?:\s*\[[^\]]*\])?\s*\{([^{}]+)\}/g;
   for (const include of text.matchAll(includePattern)) {
-    const filename = include[1].trim();
+    const command = include[1];
+    const filename = include[2].trim();
     if (!filename || path.isAbsolute(filename)) {
       continue;
     }
 
     const requestedExtension = path.extname(filename);
+    const extensions = command === "includesvg" ? svgExtensions : supportedExtensions;
     for (const directory of searchDirectories) {
       if (path.isAbsolute(directory)) {
         continue;
       }
       const basePath = path.resolve(baseDirectory, directory, filename);
       const candidates = requestedExtension
-        ? supportedExtensions.includes(requestedExtension.toLowerCase()) ? [basePath] : []
-        : supportedExtensions.map((extension) => `${basePath}${extension}`);
+        ? extensions.includes(requestedExtension.toLowerCase()) ? [basePath] : []
+        : extensions.map((extension) => `${basePath}${extension}`);
       let found: string | undefined;
       for (const candidate of candidates) {
         try {

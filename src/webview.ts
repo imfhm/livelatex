@@ -1,6 +1,7 @@
 import { parseLatex } from "./latexParser";
 import { findClosingBrace } from "./latexUtils";
 import type { PreviewBlock } from "./latexTypes";
+import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: { type: string; line?: number; character?: number; graphics?: Record<string, string> }): void;
@@ -14,18 +15,117 @@ if (!content || !stage) {
 }
 const previewRoot: HTMLElement = content;
 const pageStage: HTMLElement = stage;
+const pdfAssetsUri = previewRoot.dataset.pdfAssets;
+GlobalWorkerOptions.workerSrc = previewRoot.dataset.pdfWorker ?? "";
 
 const rendered = new Map<string, { element: HTMLElement; html: string }>();
+const pdfDocuments = new Map<string, Promise<PDFDocumentProxy>>();
 let orderedElements: HTMLElement[] = [];
 let sourceLines: string[] = [];
 let graphics: Record<string, string> = {};
 let previewZoom = 1;
 let bookLayout = false;
+let beamerLayout = false;
 
 function updatePageScale(): void {
   previewRoot.style.transform = `scale(${previewZoom})`;
   pageStage.style.width = `${previewRoot.offsetWidth * previewZoom}px`;
   pageStage.style.height = `${previewRoot.offsetHeight * previewZoom}px`;
+}
+
+function pdfAssetUri(asset: string): string {
+  if (!pdfAssetsUri) {
+    throw new Error("PDF.js runtime assets are not configured.");
+  }
+  return new URL(asset, `${pdfAssetsUri.replace(/\/+$/, "")}/`).toString();
+}
+
+function getPdfDocument(uri: string): Promise<PDFDocumentProxy> {
+  let documentPromise = pdfDocuments.get(uri);
+  if (!documentPromise) {
+    documentPromise = getDocument({
+      url: uri,
+      cMapUrl: pdfAssetUri("cmaps/"),
+      cMapPacked: true,
+      standardFontDataUrl: pdfAssetUri("standard_fonts/"),
+      isEvalSupported: false
+    }).promise;
+    pdfDocuments.set(uri, documentPromise);
+    void documentPromise.catch(() => pdfDocuments.delete(uri));
+  }
+  return documentPromise;
+}
+
+async function renderPdfGraphic(canvas: HTMLCanvasElement): Promise<void> {
+  const uri = canvas.dataset.pdfSrc;
+  const pageNumber = Number(canvas.dataset.pdfPage ?? "1");
+  if (!uri || !Number.isInteger(pageNumber) || pageNumber < 1) {
+    throw new Error("PDF graphic is missing a source URI or has an invalid page number.");
+  }
+
+  const pdf = await getPdfDocument(uri);
+  if (pageNumber > pdf.numPages) {
+    throw new Error(`PDF graphic page ${pageNumber} is outside the document's ${pdf.numPages} pages.`);
+  }
+
+  const page = await pdf.getPage(pageNumber);
+  const cssViewport = page.getViewport({ scale: 96 / 72 });
+  const style = getComputedStyle(canvas);
+  const specifiedWidth = canvas.style.width ? Number.parseFloat(style.width) : undefined;
+  const specifiedHeight = canvas.style.height ? Number.parseFloat(style.height) : undefined;
+  const parentWidth = canvas.parentElement?.clientWidth || cssViewport.width;
+  let width = specifiedWidth ?? Math.min(cssViewport.width, parentWidth);
+  let height = specifiedHeight ?? width * cssViewport.height / cssViewport.width;
+  if (specifiedHeight !== undefined && specifiedWidth === undefined) {
+    width = specifiedHeight * cssViewport.width / cssViewport.height;
+  }
+
+  const viewport = page.getViewport({ scale: width / cssViewport.width * (96 / 72) });
+  const resolution = Math.min(3, (window.devicePixelRatio || 1) * previewZoom);
+  canvas.width = Math.ceil(viewport.width * resolution);
+  canvas.height = Math.ceil(viewport.height * resolution);
+  if (specifiedWidth === undefined) {
+    canvas.style.width = `${width}px`;
+  }
+  if (specifiedHeight === undefined) {
+    canvas.style.height = "auto";
+  }
+  canvas.dataset.pdfRendered = "true";
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) {
+    throw new Error("The browser could not create a canvas for the PDF graphic.");
+  }
+
+  await page.render({
+    canvasContext: context,
+    viewport,
+    transform: resolution === 1 ? undefined : [resolution, 0, 0, resolution, 0, 0]
+  }).promise;
+}
+
+function renderPdfGraphics(): void {
+  const canvases = Array.from(previewRoot.querySelectorAll<HTMLCanvasElement>(
+    "canvas.latex-pdf-graphic:not([data-pdf-rendered]):not([data-pdf-rendering])"
+  ));
+  for (const canvas of canvases) {
+    canvas.dataset.pdfRendering = "true";
+    void renderPdfGraphic(canvas).then(() => {
+      delete canvas.dataset.pdfRendering;
+      paginateBlocks(orderedElements);
+      updatePageScale();
+      fitBeamerTitles();
+      fitDisplayMath();
+    }).catch((error: unknown) => {
+      delete canvas.dataset.pdfRendering;
+      console.error("Could not render PDF graphic:", error);
+      const message = document.createElement("span");
+      message.className = "pdf-render-error";
+      message.textContent = `Could not render PDF graphic: ${String(error)}`;
+      canvas.replaceWith(message);
+      paginateBlocks(orderedElements);
+      updatePageScale();
+    });
+  }
 }
 
 function dimensionInMillimeters(value: string): number | undefined {
@@ -41,7 +141,16 @@ function dimensionInMillimeters(value: string): number | undefined {
 function updateDocumentLayout(source: string): void {
   const documentClass = source.match(/\\documentclass(?:\[([^\]]*)\])?\s*\{([^}]+)\}/);
   bookLayout = /^(book|report)$/.test(documentClass?.[2] ?? "");
+  beamerLayout = documentClass?.[2] === "beamer";
   previewRoot.classList.toggle("book-layout", bookLayout);
+  previewRoot.classList.toggle("beamer-layout", beamerLayout);
+  if (beamerLayout) {
+    previewRoot.style.width = "127mm";
+    pageStage.style.width = "127mm";
+    return;
+  }
+  previewRoot.style.width = "210mm";
+  pageStage.style.width = "210mm";
   const fontSize = documentClass?.[1]?.match(/(?:^|,)\s*(10|11|12)pt(?:\s*,|$)/)?.[1] ?? "10";
   previewRoot.style.setProperty("--page-font-size", `${fontSize}pt`);
 
@@ -138,6 +247,19 @@ function theoremPaginationUnits(block: HTMLElement): HTMLElement[] {
 
 function paginateBlocks(blocks: HTMLElement[]): void {
   previewRoot.replaceChildren();
+
+  if (beamerLayout) {
+    for (const block of blocks) {
+      const page = document.createElement("section");
+      page.className = "paper-page beamer-page";
+      const footer = document.createElement("footer");
+      footer.className = "beamer-page-number";
+      footer.textContent = block.querySelector<HTMLElement>(".beamer-slide")?.dataset.frameNumber ?? "";
+      page.append(block, footer);
+      previewRoot.append(page);
+    }
+    return;
+  }
 
   let pageNumber = 0;
   let chapterTitle = "";
@@ -265,8 +387,8 @@ function fitDisplayMath(): void {
     }
     const contentLeft = Math.min(...contentRects.map((rect) => rect.left));
     const contentRight = Math.max(...contentRects.map((rect) => rect.right));
-    const width = contentRight - contentLeft;
-    const tagWidth = tag?.getBoundingClientRect().width ?? 0;
+    const width = (contentRight - contentLeft) / previewZoom;
+    const tagWidth = (tag?.getBoundingClientRect().width ?? 0) / previewZoom;
     const tagGap = tagWidth > 0 ? 64 : 24;
     const available = display.clientWidth;
     const formulaAvailable = available - tagWidth - tagGap;
@@ -276,6 +398,15 @@ function fitDisplayMath(): void {
       if (tag) {
         tag.style.fontSize = `${1 / scale}em`;
       }
+    }
+  }
+}
+
+function fitBeamerTitles(): void {
+  for (const title of Array.from(previewRoot.querySelectorAll(".beamer-slide-title")) as HTMLElement[]) {
+    title.style.fontSize = "13pt";
+    while (title.scrollWidth > title.clientWidth && Number.parseFloat(title.style.fontSize) > 9) {
+      title.style.fontSize = `${Number.parseFloat(title.style.fontSize) - 0.5}pt`;
     }
   }
 }
@@ -314,16 +445,23 @@ function updatePreview(source: string): void {
 
   paginateBlocks(orderedElements);
   updatePageScale();
+  renderPdfGraphics();
+  fitBeamerTitles();
   fitDisplayMath();
   void document.fonts.ready.then(() => {
     paginateBlocks(orderedElements);
     updatePageScale();
+    renderPdfGraphics();
+    fitBeamerTitles();
     fitDisplayMath();
   });
   for (const image of Array.from(previewRoot.querySelectorAll("img"))) {
     image.addEventListener("load", () => {
       paginateBlocks(orderedElements);
       updatePageScale();
+      renderPdfGraphics();
+      fitBeamerTitles();
+      fitDisplayMath();
     }, { once: true });
   }
   window.scrollTo(window.scrollX, scrollY);
@@ -332,6 +470,7 @@ function updatePreview(source: string): void {
 window.addEventListener("resize", () => {
   paginateBlocks(orderedElements);
   updatePageScale();
+  fitBeamerTitles();
   fitDisplayMath();
 });
 

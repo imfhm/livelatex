@@ -54,7 +54,8 @@
     "vscode:prepublish": "npm run build"
   },
   "dependencies": {
-    "katex": "^0.19.1"
+    "katex": "^0.19.1",
+    "pdfjs-dist": "4.8.69"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",

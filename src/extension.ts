@@ -227,12 +227,14 @@ function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webvie
   const nonce = getNonce();
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "dist", "webview.js"));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "dist", "katex.min.css"));
+  const pdfWorkerUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "dist", "pdf.worker.min.mjs"));
+  const pdfAssetsUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "dist", "pdfjs"));
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; connect-src ${webview.cspSource}; worker-src ${webview.cspSource} blob:; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <link rel="stylesheet" href="${styleUri}">
   <style>
     body { background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); padding: 1rem; margin: 0; }
@@ -274,13 +276,41 @@ function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webvie
     .footnotes li { padding-left: 0.2em; }
     .footnote-backlink { margin-left: 0.5em; text-decoration: none; }
     .latex-graphic { display: block; max-width: 100%; height: auto; margin: 1em auto; }
+    .latex-svg-graphic { max-width: 100%; }
+    .latex-pdf-graphic { display: block; max-width: 100%; max-height: 65vh; height: auto; margin: 1em auto; }
+    .pdf-render-error { display: block; padding: 0.5em; border: 1px dashed var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
     .latex-figure { margin: 1.5em 0; text-align: center; }
     .latex-figure figcaption { margin-top: 0.6em; text-align: center; }
     .graphic-error { color: var(--vscode-errorForeground); }
+    #content.beamer-layout { width: 127mm; font-family: Arial, Helvetica, sans-serif; font-size: 10pt; line-height: 1.25; color: #23383c; }
+    .beamer-page { flex-basis: 95.25mm; width: 127mm; height: 95.25mm; }
+    .beamer-page > .block { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .beamer-slide { position: relative; box-sizing: border-box; width: 100%; height: 100%; overflow: hidden; background: #fff; }
+    .beamer-slide-title { box-sizing: border-box; min-height: 10mm; margin: 0; padding: 2.5mm 3mm; overflow: hidden; background: #203438; color: #fff; font-size: 13pt; line-height: 1.3; white-space: nowrap; }
+    .beamer-slide-body { box-sizing: border-box; height: calc(100% - 10mm); overflow: hidden; padding: 5mm 9mm 7mm; container-type: size; }
+    .beamer-slide-body p { margin: 0.35em 0; text-indent: 0; }
+    .beamer-slide-body ul, .beamer-slide-body ol { padding-left: 1.8em; }
+    .beamer-slide-body li { padding: 0.1em 0; }
+    .beamer-slide-body .katex-display { margin: 0.65em 0; }
+    .beamer-slide-body .theorem-body { margin: 0.6em -1.5mm; padding: 1.2mm 1.5mm 2mm; background: #c1c8c9; font-style: normal; }
+    .beamer-slide-body .theorem-body > strong { display: block; margin: -1.2mm -1.5mm 1mm; padding: 1mm 1.5mm; background: #203438; color: #fff; font-size: 10pt; }
+    .beamer-slide-body .theorem-intro { display: block; }
+    .beamer-slide-body .latex-graphic { max-height: 45mm; margin: 0.5em auto; object-fit: contain; }
+    .beamer-slide-body .latex-pdf-graphic { max-height: 45mm; margin: 0.5em auto; }
+    .beamer-slide-body .graphic-error { display: block; box-sizing: border-box; max-width: 100%; max-height: 45mm; min-height: 0; margin: 1mm auto; padding: 1mm; overflow: hidden; border: 0.25mm dashed #8b999b; color: #647477; font-size: 7pt; text-align: center; }
+    .beamer-page-number { position: absolute; z-index: 1; right: 2.5mm; bottom: 1.5mm; color: #30464a; font-size: 7pt; line-height: 1; }
+    .beamer-title-page { padding: 30mm 10mm 8mm; color: #263a3e; }
+    .beamer-title-page h1 { margin: 0 0 4mm; padding-bottom: 4mm; border-bottom: 0.35mm solid #e87524; font-size: 16pt; line-height: 1.25; }
+    .beamer-title-author { margin: 0 0 2mm; font-size: 11pt; }
+    .beamer-title-institute { color: #526469; font-size: 8pt; line-height: 1.35; }
+    .beamer-title-date { margin-top: 3mm; font-size: 10pt; }
+    .beamer-title-logo { position: absolute; right: 1mm; bottom: 5mm; }
+    .beamer-title-logo .latex-graphic { width: 20mm; margin: 0; }
+    .beamer-footnote { position: absolute; right: 9mm; bottom: 2.5mm; left: 9mm; padding-top: 1mm; border-top: 0.2mm solid #bfc9ca; font-size: 6pt; line-height: 1.15; }
   </style>
 </head>
 <body>
-  <div id="page-stage"><main id="content" aria-live="polite"></main></div>
+  <div id="page-stage"><main id="content" data-pdf-worker="${pdfWorkerUri}" data-pdf-assets="${pdfAssetsUri}" aria-live="polite"></main></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
